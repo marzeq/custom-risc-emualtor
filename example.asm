@@ -2,10 +2,10 @@
 
 main:
   ; device_count
-  load r0, machine_info, 32
+  load r0, machine_info, 40
 
   ; device_list
-  load r1, machine_info, 40
+  load r1, machine_info, 48
 
 find_device:
   cmpi r0, 0

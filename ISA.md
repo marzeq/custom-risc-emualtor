@@ -45,6 +45,8 @@ At startup the `machine_info` register contains the address of a machine informa
 
 ```c
 typedef struct {
+  u64 version;
+
   u64 ram_start;
   u64 ram_size;
 
@@ -71,7 +73,7 @@ Devices are described by device descriptors.
 
 ```c
 typedef struct {
-  u32 type;
+  u64 type;
   u64 start;
   u64 size;
   u8 name[16];

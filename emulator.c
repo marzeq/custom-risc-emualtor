@@ -30,6 +30,8 @@ static void terminal_raw_enable(void) {
 #define FLAG_GREATER (1u << 2)
 
 typedef struct {
+  u64 version;
+
   u64 ram_start;
   u64 ram_size;
 
@@ -41,7 +43,7 @@ typedef struct {
 } machine_info;
 
 typedef struct {
-  u32 type;
+  u64 type;
   u64 start;
   u64 size;
   u8 name[16];
@@ -540,6 +542,7 @@ int main(int argc, char** argv) {
   const usz register_count = EMU_GENERAL_REGISTER_COUNT + EMU_RESERVED_REGISTER_COUNT;
 
   machine_info machine_info = {
+    .version = 0,
     .ram_start = firmware_rom_size + machine_info_rom_size + device_info_rom_size,
     .ram_size = ram_size,
     .firmware_rom_start = 0,
