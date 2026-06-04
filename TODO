@@ -1,0 +1,35 @@
+INTERRUPT SUPPORT:
+
+Add these instructions to the instruction set:
+
+  int imm
+    Raise interrupt imm.
+
+  setivt x(imm), addr(imm)
+    Set interrupt vector table entry x to point to address addr.
+
+  iret
+    Return from interrupt.
+
+Interrupt behaviour:
+
+  - Executing `int x` pushes the current execution address onto the stack.
+  - Control is transferred to the handler registered for interrupt x.
+  - `iret` restores the previously pushed execution address and resumes execution.
+  - If no handler is registered for interrupt x, the machine halts.
+
+Reserved interrupt numbers:
+
+  0   syscall
+  1   divide by zero
+  2   invalid opcode
+  3   invalid memory access
+  4   breakpoint/debug trap
+
+All other interrupt numbers are implementation-defined.
+
+Emulator-defined interrupts:
+
+  - Register dump functionality will be moved from dedicated instructions to emulator-handled interrupts.
+  - Real hardware implementations may ignore or repurpose these interrupts.
+  - Remove `dump_reg` and `dump_regs` instructions from the ISA.
