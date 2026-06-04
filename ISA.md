@@ -204,12 +204,10 @@ There is no hardware-managed stack region. Programs must initialize `sp` before 
 A common initialization sequence is:
 
 ```asm
-load r0, machine_info, 0    // ram_start
-load r1, machine_info, 8    // ram_size
+load r0, machine_info, 16   // ram_start
+load r1, machine_info, 24   // ram_size
 
-add r2, r0, r1              // ram_end
-
-mov sp, r2
+add sp, r0, r1
 ```
 
 which places the stack at the end of available RAM and allows it to grow downward.
@@ -232,8 +230,8 @@ Example:
 
 ```asm
 start:
-  load r0, machine_info, 8
-  load r1, machine_info, 16
+  load r0, machine_info, 16
+  load r1, machine_info, 24
 
   add sp, r0, r1
 
@@ -293,11 +291,8 @@ The ISA does not mandate an ABI, but the reference runtime uses:
 * `r6`–`r13`: callee-saved registers
 * `r14-r15`: reserved
 
-The reference runtime initializes `r14` to `ram_start`.
-
 ## Notes
 
 * The assembler emits raw binary instruction streams; it does not add headers or metadata.
 * The assembler accepts `-` as the output path to write the binary to stdout.
 * All jump, call, and return targets must resolve to valid instruction boundaries.
-* Device types and MMIO register layouts are implementation-defined.
