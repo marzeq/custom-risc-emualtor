@@ -1,0 +1,10 @@
+*
+!.gitignore
+!Makefile
+!emulator.c
+!assembler.c
+!isa.h
+!runtime.asm
+!example.asm
+!ISA.md
+!README.md
