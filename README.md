@@ -1,3 +1,3 @@
-Weekend project register-based architecture, emulator, and assembler.
+Weekend project RISC-like architecture, emulator, and assembler.
 
-The instruction set architecture is documented in [ISA.md](./ISA.md).
+The ISA is documented in [ISA.md](./ISA.md).
