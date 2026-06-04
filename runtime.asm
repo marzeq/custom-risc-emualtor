@@ -1,6 +1,10 @@
   jmp _setup
 
 _setup:
+  load r0, machine_info, 0
+  cmpi r0, 0
+  jne invalid_firmware_version
+
   ; r1 = ram_start
   load r1, machine_info, 8
 
@@ -20,6 +24,10 @@ _setup:
   sub sp, r3, r4
 
   call main
+  halt
+invalid_firmware_version:
+  loadi r0, 0xf324 ; invalid firmware version error code
+  dump_reg
   halt
 
 ;; LIBRARY FUNCTIONS
