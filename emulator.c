@@ -31,6 +31,7 @@ static void terminal_raw_enable(void) {
 
 typedef struct {
   u64 version;
+  u64 self_size;
 
   u64 ram_start;
   u64 ram_size;
@@ -44,6 +45,7 @@ typedef struct {
 
 typedef struct {
   u64 type;
+  u64 self_size;
   u64 start;
   u64 size;
   u8 name[16];
@@ -543,6 +545,7 @@ int main(int argc, char** argv) {
 
   machine_info machine_info = {
     .version = 0,
+    .self_size = sizeof(machine_info),
     .ram_start = firmware_rom_size + machine_info_rom_size + device_info_rom_size,
     .ram_size = ram_size,
     .firmware_rom_start = 0,
@@ -555,6 +558,7 @@ int main(int argc, char** argv) {
   device_info devices[] = {
     {
       .type = DEVICE_STDIO,
+      .self_size = sizeof(device_info),
       .start = mmio_start,
       .size = 16,
       .name = "stdio device",

@@ -1,53 +1,51 @@
 #include "runtime.asm"
 
 main:
-  ; device_count
-  load r0, machine_info, 40
+  // device_count
+  load r0, machine_info, 48
 
-  ; device_list
-  load r1, machine_info, 48
+  // device_list
+  load r1, machine_info, 56
 
 find_device:
   cmpi r0, 0
   je not_found
 
-  ; device.type
+  // device.type
   load r2, r1, 0
 
-  cmpi r2, 1              ; DEVICE_STDIO
+  cmpi r2, 1              // DEVICE_STDIO
   je found_stdio
 
-  addi r1, r1, 40         ; sizeof(device_info)
+  // advance to next device
+  load r5, r1, 8          // device.self_size
+  add r1, r1, r5
+
   subi r0, r0, 1
   jmp find_device
 
 found_stdio:
-  ; device.start
-  load r3, r1, 8
+  // r3 = device.start
+  load r3, r1, 16
 
-  ; device.name
-  lea r5, r1, 24
-
-print_name:
-  loadb r6, r5, 0
-
-  cmpi r6, 0
-  je print_newline
-
+#define PRINT_CHAR(c) \
+  loadi r6, c;        \
   storeb r6, r3, 0
 
-  addi r5, r5, 1
-  jmp print_name
+  PRINT_CHAR('H')
+  PRINT_CHAR('e')
+  PRINT_CHAR('l')
+  PRINT_CHAR('l')
+  PRINT_CHAR('o')
+  PRINT_CHAR(' ')
+  PRINT_CHAR('w')
+  PRINT_CHAR('o')
+  PRINT_CHAR('r')
+  PRINT_CHAR('l')
+  PRINT_CHAR('d')
+  PRINT_CHAR('\n')
 
-print_newline:
-  loadi r6, '\n'
-  storeb r6, r3, 0
-
-  loadi r6, 'H'
-  storeb r6, r3, 0
-
-  loadi r6, '\n'
-  storeb r6, r3, 0
+#undef PRINT_CHAR
 
   ret
 

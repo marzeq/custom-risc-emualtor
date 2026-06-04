@@ -46,6 +46,7 @@ At startup the `machine_info` register contains the address of a machine informa
 ```c
 typedef struct {
   u64 version;
+  u64 self_size;
 
   u64 ram_start;
   u64 ram_size;
@@ -60,6 +61,8 @@ typedef struct {
 
 Fields:
 
+* `version`: version number of the machine information structure format
+* `self_size`: size of the machine information structure in bytes
 * `ram_start`: first byte of writable RAM
 * `ram_size`: size of writable RAM in bytes
 * `firmware_rom_start`: first byte of firmware ROM
@@ -74,6 +77,7 @@ Devices are described by device descriptors.
 ```c
 typedef struct {
   u64 type;
+  u64 self_size;
   u64 start;
   u64 size;
   u8 name[16];
@@ -83,6 +87,7 @@ typedef struct {
 Fields:
 
 * `type`: implementation-defined device type identifier
+* `self_size`: size of the device descriptor in bytes
 * `start`: first byte of the device's MMIO region
 * `size`: size of the MMIO region in bytes
 * `name`: null-terminated ASCII string describing the device
@@ -199,10 +204,10 @@ There is no hardware-managed stack region. Programs must initialize `sp` before 
 A common initialization sequence is:
 
 ```asm
-load r0, machine_info, 0    ; ram_start
-load r1, machine_info, 8    ; ram_size
+load r0, machine_info, 0    // ram_start
+load r1, machine_info, 8    // ram_size
 
-add r2, r0, r1              ; ram_end
+add r2, r0, r1              // ram_end
 
 mov sp, r2
 ```
@@ -260,7 +265,9 @@ start:
   halt
 ```
 
-Labels are resolved to byte offsets in ROM. Comments can start with `;` or `#`.
+Labels are resolved to byte offsets in ROM.
+
+Comments can start with `//`. `;` is *NOT* a comment character, it is a line separator for multiple instructions on the same line.
 
 Immediate values may be:
 
@@ -284,8 +291,7 @@ The ISA does not mandate an ABI, but the reference runtime uses:
 * `r0`: return value
 * `r1`–`r5`: arguments and caller-saved registers
 * `r6`–`r13`: callee-saved registers
-* `r14`: heap pointer
-* `r15`: reserved
+* `r14-r15`: reserved
 
 The reference runtime initializes `r14` to `ram_start`.
 

@@ -5,29 +5,28 @@ _setup:
   cmpi r0, 0
   jne invalid_firmware_version
 
-  ; r1 = ram_start
-  load r1, machine_info, 8
+  load r0, machine_info, 8
+  cmpi r0, 64
+  jne invalid_machine_info_size
 
-  ; r2 = ram_size
-  load r2, machine_info, 16
+  // r1 = ram_start
+  load r1, machine_info, 16
 
-  ; heap starts at beginning of RAM
-  mov r14, r1
+  // r2 = ram_size
+  load r2, machine_info, 24
 
-  ; r3 = ram_end
-  add r3, r1, r2
-
-  ; r4 = stack_size = ram_size / 4
-  divi r4, r2, 4
-
-  ; sp = ram_end - stack_size
-  sub sp, r3, r4
+  // sp = ram_end
+  add sp, r1, r2
 
   call main
   halt
 invalid_firmware_version:
-  loadi r0, 0xf324 ; invalid firmware version error code
+  loadi r0, 0xf324 // invalid firmware version error code
+  dump_reg
+  halt
+invalid_machine_info_size:
+  loadi r0, 0xf325 // invalid machine info size error code
   dump_reg
   halt
 
-;; LIBRARY FUNCTIONS
+// LIBRARY FUNCTIONS

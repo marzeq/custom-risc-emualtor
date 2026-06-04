@@ -125,10 +125,25 @@ static int parse_line_marker(const char* line, char* filename_buf) {
 }
 
 static char* normalize_line(char* line) {
-  char* comment = strpbrk(line, "#;");
+  char* cpp_comment = strchr(line, '#');
+  char* asm_comment = strstr(line, "//");
+
+  char* comment = NULL;
+
+  if (cpp_comment && asm_comment) {
+    comment = cpp_comment < asm_comment
+      ? cpp_comment
+      : asm_comment;
+  } else if (cpp_comment) {
+    comment = cpp_comment;
+  } else {
+    comment = asm_comment;
+  }
+
   if (comment) {
     *comment = '\0';
   }
+
   trim_right(line);
   return trim_left(line);
 }
@@ -791,6 +806,12 @@ static buffer preprocess_file(const char* path, char* cpp_args[], int cpp_argc) 
   if (pclose(pipe) != 0) {
     free(result.data);
     dief("preprocessor failed on '%s'", path);
+  }
+
+  for (usz i = 0; i < result.size; i++) {
+    if (result.data[i] == ';') {
+      result.data[i] = '\n';
+    }
   }
 
   return result;
