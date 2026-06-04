@@ -40,12 +40,12 @@ typedef struct {
   u64 firmware_rom_size;
 
   u64 device_count;
+  u64 device_size;
   u64 device_list;
 } machine_info;
 
 typedef struct {
   u64 type;
-  u64 self_size;
   u64 start;
   u64 size;
   u8 name[16];
@@ -584,6 +584,7 @@ int main(int argc, char** argv) {
     .ram_size = ram_size,
     .firmware_rom_start = 0,
     .firmware_rom_size = firmware_rom_size,
+    .device_size = sizeof(device_info),
     .device_list = firmware_rom_size + machine_info_rom_size,
   };
 
@@ -592,7 +593,6 @@ int main(int argc, char** argv) {
   device_info devices[] = {
     {
       .type = DEVICE_STDIO,
-      .self_size = sizeof(device_info),
       .start = mmio_start,
       .size = 16,
       .name = "stdio device",

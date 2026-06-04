@@ -7,7 +7,7 @@ _setup:
   jne panic
 
   load r0, machine_info, 8
-  cmpi r0, 64
+  cmpi r0, 72
   loadi r0, 0xf325 // invalid machine info size potential error code
   jne panic
 

@@ -55,6 +55,7 @@ typedef struct {
   u64 firmware_rom_size;
 
   u64 device_count;
+  u64 device_size;
   u64 device_list;
 } machine_info;
 ```
@@ -68,6 +69,7 @@ Fields:
 * `firmware_rom_start`: first byte of firmware ROM
 * `firmware_rom_size`: size of firmware ROM in bytes
 * `device_count`: number of devices in the device list
+* `device_size`: size of each device descriptor in bytes
 * `device_list`: address of the first device descriptor
 
 ## Device Information
@@ -77,7 +79,6 @@ Devices are described by device descriptors.
 ```c
 typedef struct {
   u64 type;
-  u64 self_size;
   u64 start;
   u64 size;
   u8 name[16];
@@ -87,7 +88,6 @@ typedef struct {
 Fields:
 
 * `type`: implementation-defined device type identifier
-* `self_size`: size of the device descriptor in bytes
 * `start`: first byte of the device's MMIO region
 * `size`: size of the MMIO region in bytes
 * `name`: null-terminated ASCII string describing the device
