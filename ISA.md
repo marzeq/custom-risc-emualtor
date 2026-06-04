@@ -14,19 +14,18 @@ Each instruction is encoded as:
 
 All instruction addresses are byte offsets from the start of ROM. Jumps must target instruction boundaries, so valid targets are multiples of 8.
 
-Technically through, nothing stops you from emitting valid instructions in RAM and jumping to them.
+Technically, nothing stops you from emitting valid instructions in RAM and jumping to them.
 
 ## Registers
 
 General-purpose registers are numbered `r0` through `r15`.
 
-Five reserved registers are appended after the general-purpose set:
+Four reserved registers are appended after the general-purpose set:
 
 * `pc`: program counter
 * `sp`: stack pointer
 * `flags`: comparison flags
-* `ram_start`: first byte of writable RAM
-* `ram_end`: one-past-the-end of RAM
+* `machine_info`: pointer to the machine information structure
 
 The assembler accepts these reserved names directly. It also accepts numeric general registers such as `r0`, `r1`, and so on.
 
@@ -40,64 +39,109 @@ The `cmp` instruction sets the `flags` register using these bits:
 
 Only one of the three bits is set for a comparison result.
 
+## Machine Information
+
+At startup the `machine_info` register contains the address of a machine information structure located in ROM.
+
+```c
+typedef struct {
+  u64 ram_start;
+  u64 ram_size;
+
+  u64 device_count;
+  u64 device_list;
+} machine_info;
+```
+
+Fields:
+
+* `ram_start`: first byte of writable RAM
+* `ram_size`: size of writable RAM in bytes
+* `device_count`: number of devices in the device list
+* `device_list`: address of the first device descriptor
+
+## Device Information
+
+Devices are described by device descriptors.
+
+```c
+typedef struct {
+  u32 type;
+  u64 start;
+  u64 size;
+  u8 name[16];
+} device_info;
+```
+
+Fields:
+
+* `type`: implementation-defined device type identifier
+* `start`: first byte of the device's MMIO region
+* `size`: size of the MMIO region in bytes
+* `name`: null-terminated ASCII string describing the device
+
+The machine information structure contains both the number of devices and the address of the device descriptor list.
+
+Programs can enumerate devices by reading the device list.
+
 ## Opcodes
 
 ### Data Movement
 
-- `loadi dst, imm`: load a 32-bit immediate into a register
-- `mov dst, src`: copy a register
-- `load dst, base, imm`: load a 64-bit value from memory at `base + imm`
-- `store src, base, imm`: store a 64-bit value to memory at `base + imm`
-- `lea dst, base, imm`: compute `base + imm` and store the result in `dst`
+* `loadi dst, imm`: load a 32-bit immediate into a register
+* `mov dst, src`: copy a register
+* `load dst, base, imm`: load a 64-bit value from memory at `base + imm`
+* `store src, base, imm`: store a 64-bit value to memory at `base + imm`
+* `lea dst, base, imm`: compute `base + imm` and store the result in `dst`
 
 ### Arithmetic
 
-- `add dst, lhs, rhs`: integer addition
-- `sub dst, lhs, rhs`: integer subtraction
-- `mul dst, lhs, rhs`: integer multiplication
-- `div dst, lhs, rhs`: integer division
-- `mod dst, lhs, rhs`: integer remainder
+* `add dst, lhs, rhs`: integer addition
+* `sub dst, lhs, rhs`: integer subtraction
+* `mul dst, lhs, rhs`: integer multiplication
+* `div dst, lhs, rhs`: integer division
+* `mod dst, lhs, rhs`: integer remainder
 
 ### Arithmetic with Immediate
 
-- `addi dst, src, imm`: integer addition with immediate
-- `subi dst, src, imm`: integer subtraction with immediate
-- `muli dst, src, imm`: integer multiplication with immediate
-- `divi dst, src, imm`: integer division with immediate
-- `modi dst, src, imm`: integer remainder with immediate
+* `addi dst, src, imm`: integer addition with immediate
+* `subi dst, src, imm`: integer subtraction with immediate
+* `muli dst, src, imm`: integer multiplication with immediate
+* `divi dst, src, imm`: integer division with immediate
+* `modi dst, src, imm`: integer remainder with immediate
 
 ### Bitwise
 
-- `and dst, lhs, rhs`: bitwise and
-- `or dst, lhs, rhs`: bitwise or
-- `xor dst, lhs, rhs`: bitwise xor
-- `not dst, src`: bitwise not
+* `and dst, lhs, rhs`: bitwise and
+* `or dst, lhs, rhs`: bitwise or
+* `xor dst, lhs, rhs`: bitwise xor
+* `not dst, src`: bitwise not
 
 ### Bitwise with Immediate
 
-- `andi dst, src, imm`: bitwise and with immediate
-- `ori dst, src, imm`: bitwise or with immediate
-- `xori dst, src, imm`: bitwise xor with immediate
+* `andi dst, src, imm`: bitwise and with immediate
+* `ori dst, src, imm`: bitwise or with immediate
+* `xori dst, src, imm`: bitwise xor with immediate
 
 ### Shifts
 
-- `shl dst, src, shift_reg`: shift left by value in `shift_reg` (`shift_reg & 63`)
-- `shr dst, src, shift_reg`: shift right by value in `shift_reg` (`shift_reg & 63`)
+* `shl dst, src, shift_reg`: shift left by value in `shift_reg` (`shift_reg & 63`)
+* `shr dst, src, shift_reg`: shift right by value in `shift_reg` (`shift_reg & 63`)
 
-### Shifts with immediate
+### Shifts with Immediate
 
-- `shli dst, src, imm`: shift left by `imm & 63`
-- `shri dst, src, imm`: shift right by `imm & 63`
+* `shli dst, src, imm`: shift left by `imm & 63`
+* `shri dst, src, imm`: shift right by `imm & 63`
 
 ### Comparison
 
-- `cmp lhs, rhs`: compare two registers and update `flags`
-- `cmpi lhs, imm`: compare a register against an immediate and update `flags`
+* `cmp lhs, rhs`: compare two registers and update `flags`
+* `cmpi lhs, imm`: compare a register against an immediate and update `flags`
 
-### Control flow
+### Control Flow
 
-* `jmp target`: unconditional jump to an immediate ROM address
-* `jmpr reg`: unconditional jump to the ROM address stored in a register
+* `jmp target`: unconditional jump to an immediate address
+* `jmpr reg`: unconditional jump to the address stored in a register
 * `je target`: jump if equal
 * `jne target`: jump if not equal
 * `jl target`: jump if less than
@@ -105,7 +149,7 @@ Only one of the three bits is set for a comparison result.
 * `jg target`: jump if greater than
 * `jge target`: jump if greater than or equal
 
-### Function calls
+### Function Calls
 
 * `call target`: push the return address onto the stack and jump to `target`
 * `callr reg`: push the return address onto the stack and jump to the address stored in `reg`
@@ -113,35 +157,43 @@ Only one of the three bits is set for a comparison result.
 
 ### Stack
 
-* `push reg`: decrement `sp` by 8 and write the register value to RAM
-* `pop reg`: read 8 bytes from RAM at `sp` and increment `sp` by 8
+* `push reg`: decrement `sp` by 8 and write the register value to memory
+* `pop reg`: read 8 bytes from memory at `sp` and increment `sp` by 8
 
 ### Miscellaneous
 
 * `halt`: stop execution
 
-## Memory-Mapped IO
-
-The first byte of the IO section is a character device at address `io`.
-
-* Writing to `io` sends the low byte to stdout using `putchar`
-* Reading from `io` returns a byte from stdin using `getchar`
-* Reads past EOF return `0`
-
 ## Memory Model
 
-Memory is laid out as:
+The architecture exposes a single byte-addressed address space containing ROM, MMIO devices, and RAM.
 
-* ROM at the start of memory
-* IO immediately after ROM
-* free RAM after IO
+The address space layout is:
+```text
+Firmware ROM
+Machine Information ROM
+Device Information ROM
+RAM
+MMIO Regions
+```
 
-There is no hardware-managed stack region. The program must initialize `sp` itself before using `push`, `pop`, `call`, or `ret`.
+Programs must discover RAM and devices through the machine information structure rather than assuming fixed addresses.
+
+All addresses are byte offsets within the address space.
+
+## Stack Initialization
+
+There is no hardware-managed stack region. Programs must initialize `sp` before using `push`, `pop`, `call`, or `ret`.
 
 A common initialization sequence is:
 
 ```asm
-mov sp, ram_end
+load r0, machine_info, 0    ; ram_start
+load r1, machine_info, 8    ; ram_size
+
+add r2, r0, r1              ; ram_end
+
+mov sp, r2
 ```
 
 which places the stack at the end of available RAM and allows it to grow downward.
@@ -164,15 +216,15 @@ Example:
 
 ```asm
 start:
-  mov sp, ram_end
+  load r0, machine_info, 8
+  load r1, machine_info, 16
+
+  add sp, r0, r1
 
   call hello
   halt
 
 hello:
-  loadi r0, io
-  loadi r1, 'H'
-  store r1, r0, 0
   ret
 ```
 
@@ -191,12 +243,9 @@ Examples:
 
 ```asm
 start:
-  mov sp, ram_end
-
-  loadi r0, io
-  loadi r1, 'A'
-  store r1, r0, 0
-
+  loadi r0, 123
+  loadi r1, 456
+  add r2, r0, r1
   halt
 ```
 
@@ -206,31 +255,32 @@ Immediate values may be:
 
 * numeric literals
 * labels
-* the special symbol `io`
 * character literals using the syntax `'.'`
 
 Examples:
 
 ```asm
 loadi r0, 123
-loadi r1, io
-loadi r2, message
-loadi r3, 'A'
-loadi r4, '\n'
+loadi r1, message
+loadi r2, 'A'
+loadi r3, '\n'
 ```
 
 ## Suggested ABI
 
 The ISA does not mandate an ABI, but the reference runtime uses:
 
-- `r0`: return value
-- `r1`–`r5`: arguments and caller-saved registers
-- `r6`–`r13`: callee-saved registers
-- `r14`: heap pointer
-- `r15`: reserved
+* `r0`: return value
+* `r1`–`r5`: arguments and caller-saved registers
+* `r6`–`r13`: callee-saved registers
+* `r14`: heap pointer
+* `r15`: reserved
+
+The reference runtime initializes `r14` to `ram_start`.
 
 ## Notes
 
 * The assembler emits raw binary instruction streams; it does not add headers or metadata.
 * The assembler accepts `-` as the output path to write the binary to stdout.
 * All jump, call, and return targets must resolve to valid instruction boundaries.
+* Device types and MMIO register layouts are implementation-defined.

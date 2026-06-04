@@ -33,15 +33,9 @@ typedef enum {
   EMU_REG_SLOT_PC = 0,
   EMU_REG_SLOT_SP = 1,
   EMU_REG_SLOT_FLAGS = 2,
-  EMU_REG_SLOT_RAM_START = 3,
-  EMU_REG_SLOT_RAM_END = 4,
-  EMU_RESERVED_REGISTER_COUNT = 5,
+  EMU_REG_SLOT_MACHINE_INFO = 3,
+  EMU_RESERVED_REGISTER_COUNT = 4,
 } emu_reserved_register_slot;
-
-enum {
-  EMU_ROM_SIZE = 16 * 1024 * 1024,
-  EMU_IO_ADDRESS = EMU_ROM_SIZE,
-};
 
 typedef enum {
   /* 0x00-0x0f: data movement */
@@ -103,6 +97,10 @@ typedef enum {
   /* 0x50-0x5f: stack */
   OP_PUSH  = 0x50,
   OP_POP   = 0x51,
+
+  /* 0xf0 - 0xff: reserved for special purposes */
+  OP_NOP = 0xf0,
+  OP_DUMP_REG = 0xf3, // trigger a dump of all registers in the emulator
 } opcode;
 
 static inline size_t emu_reserved_register_index(emu_reserved_register_slot slot) {

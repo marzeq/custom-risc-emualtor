@@ -257,12 +257,8 @@ static bool parse_register(const char* token, u8* value) {
     *value = (u8)emu_reserved_register_index(EMU_REG_SLOT_FLAGS);
     return true;
   }
-  if (equals_ignore_case(token, "ram_start")) {
-    *value = (u8)emu_reserved_register_index(EMU_REG_SLOT_RAM_START);
-    return true;
-  }
-  if (equals_ignore_case(token, "ram_end")) {
-    *value = (u8)emu_reserved_register_index(EMU_REG_SLOT_RAM_END);
+  if (equals_ignore_case(token, "machine_info")) {
+    *value = (u8)emu_reserved_register_index(EMU_REG_SLOT_MACHINE_INFO);
     return true;
   }
 
@@ -270,11 +266,6 @@ static bool parse_register(const char* token, u8* value) {
 }
 
 static bool parse_imm_or_label(const char* token, const label_list* labels, u32* value) {
-  if (equals_ignore_case(token, "io")) {
-    *value = (u32)EMU_IO_ADDRESS;
-    return true;
-  }
-
   if (token[0] == '\'') {
     unsigned char ch;
     size_t len = strlen(token);
@@ -398,6 +389,12 @@ static bool opcode_from_mnemonic(const char* token, opcode* value) {
 
   if (equals_ignore_case(token, "push")) { *value = OP_PUSH; return true; }
   if (equals_ignore_case(token, "pop"))  { *value = OP_POP; return true; }
+
+  /* misc */
+
+  if (equals_ignore_case(token, "nop")) { *value = OP_NOP; return true; }
+  if (equals_ignore_case(token, "dump_reg")) { *value = OP_DUMP_REG; return true; }
+
   return false;
 }
 
@@ -719,6 +716,14 @@ static void assemble_line(
         error_at(loc, "expected register operand");
       }
 
+      expect_no_extra(cursor, loc);
+      break;
+
+    case OP_NOP:
+      expect_no_extra(cursor, loc);
+      break;
+
+    case OP_DUMP_REG:
       expect_no_extra(cursor, loc);
       break;
   }

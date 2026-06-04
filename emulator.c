@@ -22,11 +22,27 @@ static void terminal_raw_enable(void) {
 
 #include "isa.h"
 
+#define KiB(x) ((x) * 1024)
 #define MiB(x) ((x) * 1024 * 1024)
 
 #define FLAG_ZERO    (1u << 0)
 #define FLAG_LESS    (1u << 1)
 #define FLAG_GREATER (1u << 2)
+
+typedef struct {
+  u64 ram_start;
+  u64 ram_size;
+
+  u64 device_count;
+  u64 device_list;
+} machine_info;
+
+typedef struct {
+  u32 type;
+  u64 start;
+  u64 size;
+  u8 name[16];
+} device_info;
 
 static u32 read_u32_le(const u8* bytes) {
   return (u32)bytes[0] | ((u32)bytes[1] << 8) | ((u32)bytes[2] << 16) | ((u32)bytes[3] << 24);
@@ -54,40 +70,132 @@ static void write_u64_le(u8* bytes, u64 value) {
   bytes[7] = (u8)((value >> 56) & 0xFFu);
 }
 
-static bool read_u64_memory(const u8* memory, usz mem_size, u64 address, u64* value) {
-  if (address == EMU_IO_ADDRESS) {
-    int input = getchar();
-    if (input == EOF) {
-      *value = 0;
-    } else {
-      *value = (u64)(u8)input;
-    }
-    return true;
+typedef enum {
+  FIRMWARE_ROM = 0,
+  MACHINE_INFO_ROM = 1,
+  DEVICE_INFO_ROM = 2,
+  RAM = 3,
+  MMIO = 4,
+} memory_region;
+
+static memory_region get_memory_region_type(
+  u64 address,
+  u64 firmware_rom_size,
+  u64 machine_info_rom_size,
+  u64 device_info_rom_size,
+  u64 ram_size,
+  u64 mmio_size
+) {
+  if (address < firmware_rom_size) {
+    return FIRMWARE_ROM;
+  } else if (address < firmware_rom_size + machine_info_rom_size) {
+    return MACHINE_INFO_ROM;
+  } else if (address < firmware_rom_size + machine_info_rom_size + device_info_rom_size) {
+    return DEVICE_INFO_ROM;
+  } else if (address < firmware_rom_size + machine_info_rom_size + device_info_rom_size + ram_size) {
+    return RAM;
+  } else if (address < firmware_rom_size + machine_info_rom_size + device_info_rom_size + ram_size + mmio_size) {
+    return MMIO;
+  } else {
+    return -1; // Invalid memory region
   }
-  if (address > (u64)mem_size - sizeof(u64)) {
-    return false;
-  }
-  if (address >= EMU_IO_ADDRESS && address < EMU_IO_ADDRESS + sizeof(u64)) {
-    return false;
-  }
-  *value = read_u64_le(&memory[address]);
-  return true;
 }
 
-static bool write_u64_memory(u8* memory, usz mem_size, u64 address, u64 value) {
-  if (address == EMU_IO_ADDRESS) {
-    fputc((int)(value & 0xFFu), stdout);
-    fflush(stdout);
-    return true;
+static bool read_u64_memory(
+  u64 address,
+  u64 firmware_rom_size,
+  u64 machine_info_rom_size,
+  u64 device_info_rom_size,
+  u64 ram_size,
+  u64 mmio_size,
+  u8* firmware_rom,
+  machine_info* machine_info,
+  device_info* devices,
+  u8* ram,
+  u64* out_value
+) {
+  memory_region region = get_memory_region_type(
+    address,
+    firmware_rom_size,
+    machine_info_rom_size,
+    device_info_rom_size,
+    ram_size,
+    mmio_size
+  );
+
+  switch (region) {
+    case FIRMWARE_ROM:
+      *out_value = read_u64_le(&firmware_rom[address]);
+      return true;
+
+    case MACHINE_INFO_ROM:
+      if (address + sizeof(*machine_info) > firmware_rom_size + machine_info_rom_size) {
+        *out_value = 0;
+      } else {
+        *out_value = read_u64_le((u8*)machine_info + (address - firmware_rom_size));
+      }
+      return true;
+
+    case DEVICE_INFO_ROM: {
+      u64 device_info_offset = address - firmware_rom_size - machine_info_rom_size;
+      if (device_info_offset + sizeof(device_info) > device_info_rom_size) {
+        *out_value = 0;
+      } else {
+        *out_value = read_u64_le((u8*)devices + device_info_offset);
+      }
+      return true;
+    }
+
+    case RAM:
+      *out_value = read_u64_le(&ram[address - machine_info->ram_start]);
+      return true;
+
+    case MMIO:
+      *out_value = 0;
+      return false;
+
+    default:
+      return false;
   }
-  if (address > (u64)mem_size - sizeof(u64)) {
-    return false;
+}
+
+static bool write_u64_memory(
+  u64 address,
+  u64 firmware_rom_size,
+  u64 machine_info_rom_size,
+  u64 device_info_rom_size,
+  u64 ram_size,
+  u64 mmio_size,
+  u8* firmware_rom,
+  machine_info* machine_info,
+  device_info* devices,
+  u8* ram,
+  u64 value
+) {
+  (void)firmware_rom;
+  (void)devices;
+  memory_region region = get_memory_region_type(
+    address,
+    firmware_rom_size,
+    machine_info_rom_size,
+    device_info_rom_size,
+    ram_size,
+    mmio_size
+  );
+
+  switch (region) {
+    case RAM:
+      write_u64_le(&ram[address - machine_info->ram_start], value);
+      return true;
+
+    case MMIO:
+      return false;
+
+    case FIRMWARE_ROM:
+    case MACHINE_INFO_ROM:
+    case DEVICE_INFO_ROM:
+      return false;
   }
-  if (address >= EMU_IO_ADDRESS && address < EMU_IO_ADDRESS + sizeof(u64)) {
-    return false;
-  }
-  write_u64_le(&memory[address], value);
-  return true;
 }
 
 static instruction decode_instruction(const u8* bytes) {
@@ -100,8 +208,11 @@ static instruction decode_instruction(const u8* bytes) {
   return insn;
 }
 
+#define get_memory_size(firmware_rom_size, machine_info_rom_size, ram_size, mmio_size) \
+  ((firmware_rom_size) + (machine_info_rom_size) + (ram_size) + (mmio_size))
+
 static bool jump_target_is_valid(u64 target, u64 memory_size) {
-  return target < memory_size && target % INSN_SIZE == 0;
+  return target < memory_size && (target % INSN_SIZE) == 0;
 }
 
 static bool jump_condition_is_met(u64 flags, opcode op) {
@@ -134,10 +245,57 @@ static void print_help(const char* program) {
   printf("  mem_mib: total memory size in MiB (default: 512)\n");
 }
 
+static void dump_registers(const u64* registers, instruction* insn) {
+  fprintf(stderr, "==== REGISTER DUMP ====\n");
+
+  for (usz i = 0; i < EMU_GENERAL_REGISTER_COUNT; i++) {
+    fprintf(stderr,
+            "r%-2zu = 0x%016llx (%llu)\n",
+            i,
+            (unsigned long long)registers[i],
+            (unsigned long long)registers[i]);
+  }
+  
+  fprintf(stderr, "----------------------------\n");
+
+  fprintf(stderr, "pc           = 0x%016llx\n",
+          (unsigned long long)registers[emu_reserved_register_index(EMU_REG_SLOT_PC)]);
+  fprintf(stderr, "sp           = 0x%016llx\n",
+          (unsigned long long)registers[emu_reserved_register_index(EMU_REG_SLOT_SP)]);
+  fprintf(stderr, "flags        = 0x%016llx\n",
+          (unsigned long long)registers[emu_reserved_register_index(EMU_REG_SLOT_FLAGS)]);
+  fprintf(stderr, "machine_info = 0x%016llx\n",
+          (unsigned long long)registers[emu_reserved_register_index(EMU_REG_SLOT_MACHINE_INFO)]);
+
+  if (insn) {
+    fprintf(stderr, "=== INSTRUCTION DUMP ===\n");
+
+    fprintf(stderr,
+          "op=0x%02x a=%u b=%u c=%u imm=%u\n",
+          insn->opcode,
+          insn->a,
+          insn->b,
+          insn->c,
+          insn->imm);
+  }
+}
+
+#define RUNTIME_ERROR(error)                       \
+  do {                                             \
+    fprintf(stderr, "Runtime error: " error "\n"); \
+    dump_registers(registers, &insn);              \
+    goto done;                                     \
+  } while (0)
+
 int main(int argc, char** argv) {
-  usz mem_size = MiB(512);
-  const usz rom_size = MiB(16);
-  const usz io_size = MiB(16);
+  const usz firmware_rom_size = MiB(16);
+  const usz machine_info_rom_size = KiB(4);
+  const usz device_info_rom_size = KiB(32);
+  usz ram_size = MiB(512);
+  const usz mmio_size = MiB(32);
+  static_assert(firmware_rom_size % INSN_SIZE == 0, "firmware ROM size must be a multiple of instruction size");
+  static_assert(machine_info_rom_size % 8 == 0, "machine info ROM size must be a multiple of 8 bytes");
+  static_assert(mmio_size % 8 == 0, "MMIO size must be a multiple of 8 bytes");
   const char* binary_path = NULL;
 
   for (int i = 1; i < argc; i++) {
@@ -155,31 +313,38 @@ int main(int argc, char** argv) {
 
   binary_path = argv[1];
   if (argc > 2) {
-    mem_size = MiB(strtoull(argv[2], NULL, 10));
+    ram_size = MiB(strtoull(argv[2], NULL, 10));
   }
   const usz register_count = EMU_GENERAL_REGISTER_COUNT + EMU_RESERVED_REGISTER_COUNT;
 
-  if (rom_size + io_size > mem_size) {
-    fprintf(stderr, "Error: Memory size must be at least %zu bytes to accommodate ROM and IO\n", rom_size + io_size);
-    return 1;
-  }
+  machine_info machine_info = {
+    .ram_start = firmware_rom_size + machine_info_rom_size + device_info_rom_size,
+    .ram_size = ram_size,
+    .device_count = 0,
+    .device_list = 0,
+  };
 
-  if (rom_size % INSN_SIZE != 0) {
-    fprintf(stderr, "Error: ROM size must be a multiple of instruction size\n");
-    return 1;
-  }
+  device_info devices[] = {};
 
-  u8* memory = NULL;
+  u8* ram = NULL;
+  u8* firmware_rom = NULL;
   u64* registers = NULL;
   FILE* binary_file = NULL;
   int exit_code = 1;
 
-  memory = malloc(mem_size);
-  if (!memory) {
-    fprintf(stderr, "Error: Could not allocate memory\n");
+  firmware_rom = malloc(firmware_rom_size);
+  if (!firmware_rom) {
+    fprintf(stderr, "Error: Could not allocate firmware ROM\n");
     goto done;
   }
-  memset(memory, 0, mem_size);
+  memset(firmware_rom, 0, firmware_rom_size);
+
+  ram = malloc(ram_size);
+  if (!ram) {
+    fprintf(stderr, "Error: Could not allocate RAM\n");
+    goto done;
+  }
+  memset(ram, 0, ram_size);
 
   registers = malloc(register_count * sizeof(u64));
   if (!registers) {
@@ -191,20 +356,15 @@ int main(int argc, char** argv) {
   const usz pc_idx = emu_reserved_register_index(EMU_REG_SLOT_PC);
   const usz sp_idx = emu_reserved_register_index(EMU_REG_SLOT_SP);
   const usz flags_idx = emu_reserved_register_index(EMU_REG_SLOT_FLAGS);
-  const usz ram_start_idx = emu_reserved_register_index(EMU_REG_SLOT_RAM_START);
-  const usz ram_end_idx = emu_reserved_register_index(EMU_REG_SLOT_RAM_END);
+  const usz machine_info_idx = emu_reserved_register_index(EMU_REG_SLOT_MACHINE_INFO);
 
-  const u64 rom_end = rom_size;
-  const u64 io_start = rom_end;
-  const u64 io_end = io_start + io_size;
-  const u64 ram_start = io_end;
-  const u64 ram_end = mem_size;
-
-  registers[ram_start_idx] = ram_start;
-  registers[ram_end_idx] = ram_end;
+  registers[machine_info_idx] = firmware_rom_size;
   registers[pc_idx] = 0;
   registers[sp_idx] = 0;
   registers[flags_idx] = 0;
+
+  const u64 ram_start = machine_info.ram_start;
+  const u64 ram_end   = machine_info.ram_start + machine_info.ram_size;
 
   binary_file = fopen(binary_path, "rb");
   if (!binary_file) {
@@ -224,8 +384,8 @@ int main(int argc, char** argv) {
   }
 
   usz binary_size = (usz)binary_size_long;
-  if (binary_size > rom_size) {
-    fprintf(stderr, "Error: Binary size (%zu bytes) exceeds ROM size (%zu bytes)\n", binary_size, rom_size);
+  if (binary_size > firmware_rom_size) {
+    fprintf(stderr, "Error: Binary size (%zu bytes) exceeds ROM size (%zu bytes)\n", binary_size, firmware_rom_size);
     goto done;
   }
 
@@ -239,22 +399,20 @@ int main(int argc, char** argv) {
     goto done;
   }
 
-  size_t read_size = fread(memory, 1, binary_size, binary_file);
+  size_t read_size = fread(firmware_rom, 1, binary_size, binary_file);
   if (read_size != binary_size) {
     fprintf(stderr, "Error: Could not read entire binary file (read %zu bytes, expected %zu bytes)\n", read_size, binary_size);
     goto done;
   }
+  fclose(binary_file);
+  binary_file = NULL;
 
   terminal_raw_enable();
 
   for (;;) {
     u64 pc = registers[pc_idx];
-    if (pc > rom_end - INSN_SIZE) {
-      fprintf(stderr, "Runtime error: program counter out of ROM bounds (%llu)\n", (unsigned long long)pc);
-      goto done;
-    }
 
-    instruction insn = decode_instruction(&memory[pc]);
+    instruction insn = decode_instruction(&firmware_rom[pc]);
     opcode op = (opcode)insn.opcode;
     u64 next_pc = pc + INSN_SIZE;
     bool pc_written = false;
@@ -266,8 +424,7 @@ int main(int argc, char** argv) {
 
       case OP_LOADI:
         if (insn.a >= register_count) {
-          fprintf(stderr, "Runtime error: invalid destination register %u\n", insn.a);
-          goto done;
+          RUNTIME_ERROR("invalid destination register");
         }
         registers[insn.a] = (u64)(i32)insn.imm;
         pc_written = (insn.a == pc_idx);
@@ -275,8 +432,7 @@ int main(int argc, char** argv) {
 
       case OP_MOV:
         if (insn.a >= register_count || insn.b >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b];
         pc_written = (insn.a == pc_idx);
@@ -284,8 +440,7 @@ int main(int argc, char** argv) {
 
       case OP_ADD:
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] + registers[insn.c];
         pc_written = (insn.a == pc_idx);
@@ -293,8 +448,7 @@ int main(int argc, char** argv) {
 
       case OP_SUB:
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] - registers[insn.c];
         pc_written = (insn.a == pc_idx);
@@ -302,8 +456,7 @@ int main(int argc, char** argv) {
 
       case OP_MUL:
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] * registers[insn.c];
         pc_written = (insn.a == pc_idx);
@@ -311,12 +464,10 @@ int main(int argc, char** argv) {
       
       case OP_DIV:
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         if (registers[insn.c] == 0) {
-          fprintf(stderr, "Runtime error: division by zero\n");
-          goto done;
+          RUNTIME_ERROR("division by zero");
         }
         registers[insn.a] = registers[insn.b] / registers[insn.c];
         pc_written = (insn.a == pc_idx);
@@ -324,8 +475,7 @@ int main(int argc, char** argv) {
 
       case OP_ADDI:
         if (insn.a >= register_count || insn.b >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] + (u64)(i32)insn.imm;
         pc_written = (insn.a == pc_idx);
@@ -333,8 +483,7 @@ int main(int argc, char** argv) {
 
       case OP_SUBI:
         if (insn.a >= register_count || insn.b >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] - (u64)(i32)insn.imm;
         pc_written = (insn.a == pc_idx);
@@ -342,8 +491,7 @@ int main(int argc, char** argv) {
 
       case OP_MULI:
         if (insn.a >= register_count || insn.b >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] * (u64)(i32)insn.imm;
         pc_written = (insn.a == pc_idx);
@@ -351,12 +499,10 @@ int main(int argc, char** argv) {
 
       case OP_DIVI:
         if (insn.a >= register_count || insn.b >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         if ((i32)insn.imm == 0) {
-          fprintf(stderr, "Runtime error: division by zero\n");
-          goto done;
+          RUNTIME_ERROR("division by zero");
         }
         registers[insn.a] = registers[insn.b] / (u64)(i32)insn.imm;
         pc_written = (insn.a == pc_idx);
@@ -364,25 +510,24 @@ int main(int argc, char** argv) {
 
       case OP_MOD:
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         if (registers[insn.c] == 0) {
-          fprintf(stderr, "Runtime error: division by zero\n");
-          goto done;
+          RUNTIME_ERROR("division by zero");
         }
-        registers[insn.a] = registers[insn.b] % registers[insn.c];
+        if ((i32)insn.imm == 0) {
+          RUNTIME_ERROR("division by zero");
+        }
+        registers[insn.a] = registers[insn.b] % (u64)(i32)insn.imm;
         pc_written = (insn.a == pc_idx);
         break;
 
       case OP_MODI:
         if (insn.a >= register_count || insn.b >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         if ((i32)insn.imm == 0) {
-          fprintf(stderr, "Runtime error: division by zero\n");
-          goto done;
+          RUNTIME_ERROR("division by zero");
         }
         registers[insn.a] = registers[insn.b] % (u64)(i32)insn.imm;
         pc_written = (insn.a == pc_idx);
@@ -390,8 +535,7 @@ int main(int argc, char** argv) {
 
       case OP_AND:
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] & registers[insn.c];
         pc_written = (insn.a == pc_idx);
@@ -399,8 +543,7 @@ int main(int argc, char** argv) {
 
       case OP_OR:
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] | registers[insn.c];
         pc_written = (insn.a == pc_idx);
@@ -408,8 +551,7 @@ int main(int argc, char** argv) {
 
       case OP_XOR:
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] ^ registers[insn.c];
         pc_written = (insn.a == pc_idx);
@@ -417,8 +559,7 @@ int main(int argc, char** argv) {
 
       case OP_NOT:
         if (insn.a >= register_count || insn.b >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = ~registers[insn.b];
         pc_written = (insn.a == pc_idx);
@@ -426,8 +567,7 @@ int main(int argc, char** argv) {
 
       case OP_ANDI:
         if (insn.a >= register_count || insn.b >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] & (u64)(i32)insn.imm;
         pc_written = (insn.a == pc_idx);
@@ -435,8 +575,7 @@ int main(int argc, char** argv) {
 
       case OP_ORI:
         if (insn.a >= register_count || insn.b >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] | (u64)(i32)insn.imm;
         pc_written = (insn.a == pc_idx);
@@ -444,8 +583,7 @@ int main(int argc, char** argv) {
 
       case OP_XORI:
         if (insn.a >= register_count || insn.b >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] ^ (u64)(i32)insn.imm;
         pc_written = (insn.a == pc_idx);
@@ -453,8 +591,7 @@ int main(int argc, char** argv) {
 
       case OP_LEA:
         if (insn.a >= register_count || insn.b >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] + (i64)(i32)insn.imm;
         pc_written = (insn.a == pc_idx);
@@ -462,8 +599,7 @@ int main(int argc, char** argv) {
 
       case OP_SHL:
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] << (registers[insn.c] & 63u);
         pc_written = (insn.a == pc_idx);
@@ -471,8 +607,7 @@ int main(int argc, char** argv) {
 
       case OP_SHR:
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] >> (registers[insn.c] & 63u);
         pc_written = (insn.a == pc_idx);
@@ -480,8 +615,7 @@ int main(int argc, char** argv) {
 
       case OP_SHLI:
         if (insn.a >= register_count || insn.b >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] << ((u64)(i32)insn.imm & 63u);
         pc_written = (insn.a == pc_idx);
@@ -489,8 +623,7 @@ int main(int argc, char** argv) {
 
       case OP_SHRI:
         if (insn.a >= register_count || insn.b >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] >> ((u64)(i32)insn.imm & 63u);
         pc_written = (insn.a == pc_idx);
@@ -498,18 +631,24 @@ int main(int argc, char** argv) {
 
       case OP_LOAD: {
         if (insn.a >= register_count || insn.b >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
 
         u64 address = registers[insn.b] + (i64)(i32)insn.imm;
-        if (address != EMU_IO_ADDRESS && ((address >= io_start && address < io_end) || address > (u64)mem_size - sizeof(u64))) {
-          fprintf(stderr, "Runtime error: invalid load address %llu\n", (unsigned long long)address);
-          goto done;
-        }
-        if (!read_u64_memory(memory, mem_size, address, &registers[insn.a])) {
-          fprintf(stderr, "Runtime error: load address out of bounds (%llu)\n", (unsigned long long)address);
-          goto done;
+        if (!read_u64_memory(
+              address,
+              firmware_rom_size,
+              machine_info_rom_size,
+              device_info_rom_size,
+              ram_size,
+              mmio_size,
+              firmware_rom,
+              &machine_info,
+              devices,
+              ram,
+              &registers[insn.a]
+            )) {
+          RUNTIME_ERROR("illegal load address");
         }
         pc_written = (insn.a == pc_idx);
         break;
@@ -517,46 +656,48 @@ int main(int argc, char** argv) {
 
       case OP_STORE: {
         if (insn.a >= register_count || insn.b >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
 
         u64 address = registers[insn.b] + (i64)(i32)insn.imm;
-        if (address != EMU_IO_ADDRESS && (address < ram_start || address >= mem_size)) {
-          fprintf(stderr, "Runtime error: invalid store address %llu\n", (unsigned long long)address);
-          goto done;
-        }
-        if (!write_u64_memory(memory, mem_size, address, registers[insn.a])) {
-          fprintf(stderr, "Runtime error: store address out of bounds (%llu)\n", (unsigned long long)address);
-          goto done;
+        if (!write_u64_memory(
+              address,
+              firmware_rom_size,
+              machine_info_rom_size,
+              device_info_rom_size,
+              ram_size,
+              mmio_size,
+              firmware_rom,
+              &machine_info,
+              devices,
+              ram,
+              registers[insn.a]
+            )) {
+          RUNTIME_ERROR("illegal store address");
         }
         break;
       }
 
       case OP_JMP:
-        if (!jump_target_is_valid((u64)insn.imm, mem_size)) {
-          fprintf(stderr, "Runtime error: invalid jump target %u\n", insn.imm);
-          goto done;
+        if (!jump_target_is_valid((u64)insn.imm, ram_size)) {
+          RUNTIME_ERROR("invalid jump target");
         }
         registers[pc_idx] = (u64)insn.imm;
         continue;
 
       case OP_JMPR:
         if (insn.a >= register_count) {
-          fprintf(stderr, "Runtime error: invalid jump target register\n");
-          goto done;
+          RUNTIME_ERROR("invalid jump target register");
         }
-        if (!jump_target_is_valid(registers[insn.a], mem_size)) {
-          fprintf(stderr, "Runtime error: invalid jump target %llu\n", (unsigned long long)registers[insn.a]);
-          goto done;
+        if (!jump_target_is_valid(registers[insn.a], ram_size)) {
+          RUNTIME_ERROR("invalid jump target");
         }
         registers[pc_idx] = registers[insn.a];
         continue;
 
       case OP_CMP:
         if (insn.a >= register_count || insn.b >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         {
           u64 left = registers[insn.a];
@@ -575,8 +716,7 @@ int main(int argc, char** argv) {
 
       case OP_CMPI:
         if (insn.a >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         {
           u64 left = registers[insn.a];
@@ -600,9 +740,8 @@ int main(int argc, char** argv) {
       case OP_JG:
       case OP_JGE:
         if (jump_condition_is_met(registers[flags_idx], op)) {
-          if (!jump_target_is_valid((u64)insn.imm, mem_size)) {
-            fprintf(stderr, "Runtime error: invalid jump target %u\n", insn.imm);
-            goto done;
+          if (!jump_target_is_valid((u64)insn.imm, ram_size)) {
+            RUNTIME_ERROR("invalid jump target");
           }
           registers[pc_idx] = (u64)insn.imm;
           continue;
@@ -611,55 +750,80 @@ int main(int argc, char** argv) {
 
       case OP_PUSH:
         if (insn.a >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
-        if (registers[sp_idx] < ram_start + sizeof(u64) || registers[sp_idx] > ram_end) {
-          fprintf(stderr, "Runtime error: stack overflow\n");
-          goto done;
+        if (registers[sp_idx] < ram_start || registers[sp_idx] > ram_end) {
+          RUNTIME_ERROR("stack overflow");
         }
         registers[sp_idx] -= sizeof(u64);
-        if (!write_u64_memory(memory, mem_size, registers[sp_idx], registers[insn.a])) {
-          fprintf(stderr, "Runtime error: stack write failed\n");
-          goto done;
+        if (!write_u64_memory(
+              registers[sp_idx],
+              firmware_rom_size,
+              machine_info_rom_size,
+              device_info_rom_size,
+              ram_size,
+              mmio_size,
+              firmware_rom,
+              &machine_info,
+              devices,
+              ram,
+              registers[insn.a]
+            )) {
+          RUNTIME_ERROR("stack write failed");
         }
         break;
 
       case OP_POP:
         if (insn.a >= register_count) {
-          fprintf(stderr, "Runtime error: invalid register operand\n");
-          goto done;
+          RUNTIME_ERROR("invalid register operand");
         }
         if (registers[sp_idx] < ram_start || registers[sp_idx] >= ram_end) {
-          fprintf(stderr, "Runtime error: stack underflow\n");
-          goto done;
+          RUNTIME_ERROR("stack underflow");
         }
-        if (!read_u64_memory(memory, mem_size, registers[sp_idx], &registers[insn.a])) {
-          fprintf(stderr, "Runtime error: stack read failed\n");
-          goto done;
+        if (!read_u64_memory(
+              registers[sp_idx],
+              firmware_rom_size,
+              machine_info_rom_size,
+              device_info_rom_size,
+              ram_size,
+              mmio_size,
+              firmware_rom,
+              &machine_info,
+              devices,
+              ram,
+              &registers[insn.a]
+            )) {
+          RUNTIME_ERROR("stack read failed");
         }
         registers[sp_idx] += sizeof(u64);
         break;
 
       case OP_CALL:
-        if (!jump_target_is_valid((u64)insn.imm, mem_size)) {
-            fprintf(stderr, "Runtime error: invalid call target %u\n", insn.imm);
-            goto done;
+        if (!jump_target_is_valid((u64)insn.imm, ram_size)) {
+          RUNTIME_ERROR("invalid call target");
         }
 
         if (registers[sp_idx] < ram_start + sizeof(u64) ||
             registers[sp_idx] > ram_end) {
-            fprintf(stderr, "Runtime error: stack overflow\n");
-            goto done;
+          RUNTIME_ERROR("stack overflow");
         }
 
         registers[sp_idx] -= sizeof(u64);
 
-        if (!write_u64_memory(memory, mem_size,
-                              registers[sp_idx],
-                              next_pc)) {
-            fprintf(stderr, "Runtime error: stack write failed\n");
-            goto done;
+        if (!write_u64_memory(
+              registers[sp_idx],
+              firmware_rom_size,
+              machine_info_rom_size,
+              device_info_rom_size,
+              ram_size,
+              mmio_size,
+              firmware_rom,
+              &machine_info,
+              devices,
+              ram,
+              next_pc
+            )) {
+          RUNTIME_ERROR("stack write failed");
         }
 
         registers[pc_idx] = (u64)insn.imm;
@@ -667,31 +831,34 @@ int main(int argc, char** argv) {
       
       case OP_CALLR:
         if (insn.a >= register_count) {
-            fprintf(stderr, "Runtime error: invalid target register\n");
-            goto done;
+          RUNTIME_ERROR("invalid target register");
         }
 
-        if (!jump_target_is_valid(registers[insn.a], mem_size)) {
-            fprintf(stderr,
-                    "Runtime error: invalid call target %llu\n",
-                    (unsigned long long)registers[insn.a]);
-            goto done;
+        if (!jump_target_is_valid(registers[insn.a], ram_size)) {
+          RUNTIME_ERROR("invalid call target");
         }
 
         if (registers[sp_idx] < ram_start + sizeof(u64) ||
             registers[sp_idx] > ram_end) {
-            fprintf(stderr, "Runtime error: stack overflow\n");
-            goto done;
+          RUNTIME_ERROR("stack overflow");
         }
 
         registers[sp_idx] -= sizeof(u64);
 
-        if (!write_u64_memory(memory,
-                              mem_size,
-                              registers[sp_idx],
-                              next_pc)) {
-            fprintf(stderr, "Runtime error: stack write failed\n");
-            goto done;
+        if (!write_u64_memory(
+              registers[sp_idx],
+              firmware_rom_size,
+              machine_info_rom_size,
+              device_info_rom_size,
+              ram_size,
+              mmio_size,
+              firmware_rom,
+              &machine_info,
+              devices,
+              ram,
+              next_pc
+            )) {
+          RUNTIME_ERROR("stack write failed");
         }
 
         registers[pc_idx] = registers[insn.a];
@@ -702,29 +869,45 @@ int main(int argc, char** argv) {
 
         if (registers[sp_idx] < ram_start ||
             registers[sp_idx] >= ram_end) {
-            fprintf(stderr, "Runtime error: stack underflow\n");
-            goto done;
+          RUNTIME_ERROR("stack underflow");
         }
 
-        if (!read_u64_memory(memory, mem_size,
-                            registers[sp_idx],
-                            &return_address)) {
-            fprintf(stderr, "Runtime error: stack read failed\n");
-            goto done;
+        if (!read_u64_memory(
+              registers[sp_idx],
+              firmware_rom_size,
+              machine_info_rom_size,
+              device_info_rom_size,
+              ram_size,
+              mmio_size,
+              firmware_rom,
+              &machine_info,
+              devices,
+              ram,
+              &return_address
+            )) {
+          RUNTIME_ERROR("stack read failed");
         }
 
         registers[sp_idx] += sizeof(u64);
 
-        if (!jump_target_is_valid(return_address, mem_size)) {
-            fprintf(stderr,
-                    "Runtime error: invalid return address %llu\n",
-                    (unsigned long long)return_address);
-            goto done;
+        if (!jump_target_is_valid(return_address, ram_size)) {
+          RUNTIME_ERROR("invalid return address");
         }
 
         registers[pc_idx] = return_address;
         continue;
       }
+    
+    case OP_NOP:
+        break;
+
+    case OP_DUMP_REG:
+      dump_registers(registers, NULL);
+      break;
+
+    default:
+      RUNTIME_ERROR("invalid opcode");
+      break;
     }
 
     if (!pc_written) {
@@ -733,11 +916,17 @@ int main(int argc, char** argv) {
   }
 
 done:
+#ifdef DEBUG
+  dump_registers(registers, NULL);
+#endif
   if (binary_file) {
     fclose(binary_file);
   }
-  if (memory) {
-    free(memory);
+  if (firmware_rom) {
+    free(firmware_rom);
+  }
+  if (ram) {
+    free(ram);
   }
   if (registers) {
     free(registers);
