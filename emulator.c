@@ -47,6 +47,10 @@ typedef struct {
   u8 name[16];
 } device_info;
 
+enum {
+  DEVICE_STDIO = 1,
+};
+
 static u32 read_u32_le(const u8* bytes) {
   return (u32)bytes[0] | ((u32)bytes[1] << 8) | ((u32)bytes[2] << 16) | ((u32)bytes[3] << 24);
 }
@@ -71,6 +75,14 @@ static void write_u64_le(u8* bytes, u64 value) {
   bytes[5] = (u8)((value >> 40) & 0xFFu);
   bytes[6] = (u8)((value >> 48) & 0xFFu);
   bytes[7] = (u8)((value >> 56) & 0xFFu);
+}
+
+static u8 read_u8(const u8* p) {
+  return *p;
+}
+
+static void write_u8(u8* p, u8 value) {
+  *p = value;
 }
 
 typedef enum {
@@ -101,6 +113,79 @@ static memory_region get_memory_region_type(
     return MMIO;
   } else {
     return -1; // Invalid memory region
+  }
+}
+
+static const device_info* find_device(
+  const device_info* devices,
+  u64 device_count,
+  u64 address
+) {
+  for (u64 i = 0; i < device_count; i++) {
+    const device_info* d = &devices[i];
+
+    if (address >= d->start &&
+        address < d->start + d->size) {
+      return d;
+    }
+  }
+
+  return NULL;
+}
+
+static bool mmio_read(
+  const device_info* devices,
+  u64 device_count,
+  u64 address,
+  u64* out_value
+) {
+  const device_info* device =
+      find_device(devices, device_count, address);
+
+  if (!device) {
+    return false;
+  }
+
+  switch (device->type) {
+    case DEVICE_STDIO: {
+      int ch = getchar();
+      if (ch == EOF) {
+        *out_value = (u64)0;
+      } else {
+        *out_value = (u64)(unsigned char)ch;
+      }
+      return true;
+    }
+
+    default:
+      return false;
+  }
+}
+
+static bool mmio_write(
+  const device_info* devices,
+  u64 device_count,
+  u64 address,
+  u64 value
+) {
+  const device_info* device =
+      find_device(devices, device_count, address);
+
+  if (!device) {
+    return false;
+  }
+
+  switch (device->type) {
+    case DEVICE_STDIO: {
+      int ch = (int)(value & 0xFFu);
+      if (putchar(ch) == EOF) {
+        return false;
+      }
+      return true;
+    }
+
+    default:
+      return false;
   }
 }
 
@@ -154,8 +239,12 @@ static bool read_u64_memory(
       return true;
 
     case MMIO:
-      *out_value = 0;
-      return false;
+      return mmio_read(
+        devices,
+        machine_info->device_count,
+        address,
+        out_value
+      );
 
     default:
       return false;
@@ -192,11 +281,141 @@ static bool write_u64_memory(
       return true;
 
     case MMIO:
-      return false;
+      return mmio_write(
+        devices,
+        machine_info->device_count,
+        address,
+        value
+      );
 
     case FIRMWARE_ROM:
     case MACHINE_INFO_ROM:
     case DEVICE_INFO_ROM:
+      return false;
+  }
+}
+
+static bool read_u8_memory(
+  u64 address,
+  u64 firmware_rom_size,
+  u64 machine_info_rom_size,
+  u64 device_info_rom_size,
+  u64 ram_size,
+  u64 mmio_size,
+  u8* firmware_rom,
+  machine_info* machine_info,
+  device_info* devices,
+  u8* ram,
+  u8* out_value
+) {
+  memory_region region = get_memory_region_type(
+    address,
+    firmware_rom_size,
+    machine_info_rom_size,
+    device_info_rom_size,
+    ram_size,
+    mmio_size
+  );
+
+  switch (region) {
+    case FIRMWARE_ROM:
+      *out_value = read_u8(&firmware_rom[address]);
+      return true;
+
+    case MACHINE_INFO_ROM:
+      if (address >= firmware_rom_size + machine_info_rom_size) {
+        *out_value = 0;
+      } else {
+        *out_value =
+          read_u8((u8*)machine_info + (address - firmware_rom_size));
+      }
+      return true;
+
+    case DEVICE_INFO_ROM: {
+      u64 offset =
+        address - firmware_rom_size - machine_info_rom_size;
+
+      if (offset >= device_info_rom_size) {
+        *out_value = 0;
+      } else {
+        *out_value = read_u8((u8*)devices + offset);
+      }
+
+      return true;
+    }
+
+    case RAM:
+      *out_value =
+        read_u8(&ram[address - machine_info->ram_start]);
+      return true;
+
+    case MMIO: {
+      u64 value;
+
+      if (!mmio_read(
+            devices,
+            machine_info->device_count,
+            address,
+            &value
+          )) {
+        return false;
+      }
+
+      *out_value = (u8)value;
+      return true;
+    }
+
+    default:
+      return false;
+  }
+}
+
+static bool write_u8_memory(
+  u64 address,
+  u64 firmware_rom_size,
+  u64 machine_info_rom_size,
+  u64 device_info_rom_size,
+  u64 ram_size,
+  u64 mmio_size,
+  u8* firmware_rom,
+  machine_info* machine_info,
+  device_info* devices,
+  u8* ram,
+  u8 value
+) {
+  (void)firmware_rom;
+
+  memory_region region = get_memory_region_type(
+    address,
+    firmware_rom_size,
+    machine_info_rom_size,
+    device_info_rom_size,
+    ram_size,
+    mmio_size
+  );
+
+  switch (region) {
+    case RAM:
+      write_u8(
+        &ram[address - machine_info->ram_start],
+        value
+      );
+      return true;
+
+    case MMIO:
+      return mmio_write(
+        devices,
+        machine_info->device_count,
+        address,
+        value
+      );
+
+    case FIRMWARE_ROM:
+    case MACHINE_INFO_ROM:
+    case DEVICE_INFO_ROM:
+      return false;
+
+    default:
       return false;
   }
 }
@@ -325,11 +544,21 @@ int main(int argc, char** argv) {
     .ram_size = ram_size,
     .firmware_rom_start = 0,
     .firmware_rom_size = firmware_rom_size,
-    .device_count = 0,
-    .device_list = 0,
+    .device_list = firmware_rom_size + machine_info_rom_size,
   };
 
-  device_info devices[] = {};
+  const usz mmio_start = machine_info.ram_start + machine_info.ram_size;
+
+  device_info devices[] = {
+    {
+      .type = DEVICE_STDIO,
+      .start = mmio_start,
+      .size = 16,
+      .name = "stdio device",
+    },
+  };
+
+  machine_info.device_count = sizeof(devices) / sizeof(devices[0]);
 
   u8* ram = NULL;
   u8* firmware_rom = NULL;
@@ -680,6 +909,61 @@ int main(int argc, char** argv) {
             )) {
           RUNTIME_ERROR("illegal store address");
         }
+        break;
+      }
+
+      case OP_LOADB: {
+        if (insn.a >= register_count || insn.b >= register_count) {
+          RUNTIME_ERROR("invalid register operand");
+        }
+
+        u8 value;
+        u64 address = registers[insn.b] + (i64)(i32)insn.imm;
+
+        if (!read_u8_memory(
+              address,
+              firmware_rom_size,
+              machine_info_rom_size,
+              device_info_rom_size,
+              ram_size,
+              mmio_size,
+              firmware_rom,
+              &machine_info,
+              devices,
+              ram,
+              &value
+            )) {
+          RUNTIME_ERROR("illegal load address");
+        }
+
+        registers[insn.a] = value;
+        pc_written = (insn.a == pc_idx);
+        break;
+      }
+
+      case OP_STOREB: {
+        if (insn.a >= register_count || insn.b >= register_count) {
+          RUNTIME_ERROR("invalid register operand");
+        }
+
+        u64 address = registers[insn.b] + (i64)(i32)insn.imm;
+
+        if (!write_u8_memory(
+              address,
+              firmware_rom_size,
+              machine_info_rom_size,
+              device_info_rom_size,
+              ram_size,
+              mmio_size,
+              firmware_rom,
+              &machine_info,
+              devices,
+              ram,
+              (u8)registers[insn.a]
+            )) {
+          RUNTIME_ERROR("illegal store address");
+        }
+
         break;
       }
 

@@ -98,6 +98,8 @@ Programs can enumerate devices by reading the device list.
 * `load dst, base, imm`: load a 64-bit value from memory at `base + imm`
 * `store src, base, imm`: store a 64-bit value to memory at `base + imm`
 * `lea dst, base, imm`: compute `base + imm` and store the result in `dst`
+* `loadb dst, base, imm`: load a byte from memory at `base + imm` and zero-extend it to 64 bits
+* `storeb src, base, imm`: store the least significant byte of `src` to memory at `base + imm`
 
 ### Arithmetic
 
@@ -168,6 +170,8 @@ Programs can enumerate devices by reading the device list.
 ### Miscellaneous
 
 * `halt`: stop execution
+* `nop`: no operation
+* `dump_reg`: dump registers to the console in the emulator
 
 ## Memory Model
 

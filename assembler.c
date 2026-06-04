@@ -332,6 +332,8 @@ static bool opcode_from_mnemonic(const char* token, opcode* value) {
   if (equals_ignore_case(token, "load"))  { *value = OP_LOAD; return true; }
   if (equals_ignore_case(token, "store")) { *value = OP_STORE; return true; }
   if (equals_ignore_case(token, "lea"))   { *value = OP_LEA; return true; }
+  if (equals_ignore_case(token, "loadb")) { *value = OP_LOADB; return true; }
+  if (equals_ignore_case(token, "storeb")) { *value = OP_STOREB; return true; }
 
   /* arithmetic */
 
@@ -508,6 +510,8 @@ static void assemble_line(
 
     case OP_LOAD:
     case OP_STORE:
+    case OP_LOADB:
+    case OP_STOREB:
     case OP_LEA:
       token = next_token(&cursor);
       if (!token || !parse_register(token, &a)) {

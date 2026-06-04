@@ -39,12 +39,14 @@ typedef enum {
 
 typedef enum {
   /* 0x00-0x0f: data movement */
-  OP_HALT  = 0x00,
-  OP_LOADI = 0x01,
-  OP_MOV   = 0x02,
-  OP_LOAD  = 0x03,
-  OP_STORE = 0x04,
-  OP_LEA   = 0x05,
+  OP_HALT   = 0x00,
+  OP_LOADI  = 0x01,
+  OP_MOV    = 0x02,
+  OP_LOAD   = 0x03,
+  OP_STORE  = 0x04,
+  OP_LEA    = 0x05,
+  OP_LOADB  = 0x06,
+  OP_STOREB = 0x07,
 
   /* 0x10-0x1f: arithmetic */
   OP_ADD   = 0x10,
