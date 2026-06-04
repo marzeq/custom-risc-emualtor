@@ -411,6 +411,7 @@ static bool opcode_from_mnemonic(const char* token, opcode* value) {
 
   if (equals_ignore_case(token, "nop")) { *value = OP_NOP; return true; }
   if (equals_ignore_case(token, "dump_reg")) { *value = OP_DUMP_REG; return true; }
+  if (equals_ignore_case(token, "dump_regs")) { *value = OP_DUMP_REGS; return true; }
 
   return false;
 }
@@ -743,6 +744,15 @@ static void assemble_line(
       break;
 
     case OP_DUMP_REG:
+      token = next_token(&cursor);
+      if (!token || !parse_register(token, &a)) {
+        error_at(loc, "expected register operand");
+      }
+
+      expect_no_extra(cursor, loc);
+      break;
+
+    case OP_DUMP_REGS:
       expect_no_extra(cursor, loc);
       break;
   }

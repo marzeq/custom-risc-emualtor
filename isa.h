@@ -102,7 +102,8 @@ typedef enum {
 
   /* 0xf0 - 0xff: reserved for special purposes */
   OP_NOP = 0xf0,
-  OP_DUMP_REG = 0xf3, // trigger a dump of all registers in the emulator
+  OP_DUMP_REG = 0xf3, // trigger a dump of specified register in emulator
+  OP_DUMP_REGS = 0xf4, // trigger a dump of all registers in emulator
 } opcode;
 
 static inline size_t emu_reserved_register_index(emu_reserved_register_slot slot) {

@@ -22,11 +22,11 @@ _setup:
   halt
 invalid_firmware_version:
   loadi r0, 0xf324 // invalid firmware version error code
-  dump_reg
+  dump_regs
   halt
 invalid_machine_info_size:
   loadi r0, 0xf325 // invalid machine info size error code
-  dump_reg
+  dump_regs
   halt
 
 // LIBRARY FUNCTIONS

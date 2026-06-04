@@ -471,6 +471,40 @@ static void print_help(const char* program) {
   printf("  mem_mib: total memory size in MiB (default: 512)\n");
 }
 
+static void dump_register(const u64* registers, size_t index) {
+  if (index < EMU_GENERAL_REGISTER_COUNT) {
+    fprintf(stderr,
+            "r%zu = 0x%016llx (%llu)\n",
+            index,
+            (unsigned long long)registers[index],
+            (unsigned long long)registers[index]);
+    return;
+  }
+
+  if (index == emu_reserved_register_index(EMU_REG_SLOT_PC)) {
+    fprintf(stderr, "pc = 0x%016llx (%llu)\n",
+            (unsigned long long)registers[index],
+            (unsigned long long)registers[index]);
+  } else if (index == emu_reserved_register_index(EMU_REG_SLOT_SP)) {
+    fprintf(stderr, "sp = 0x%016llx (%llu)\n",
+            (unsigned long long)registers[index],
+            (unsigned long long)registers[index]);
+  } else if (index == emu_reserved_register_index(EMU_REG_SLOT_FLAGS)) {
+    fprintf(stderr, "flags = 0x%016llx (%llu)\n",
+            (unsigned long long)registers[index],
+            (unsigned long long)registers[index]);
+  } else if (index == emu_reserved_register_index(EMU_REG_SLOT_MACHINE_INFO)) {
+    fprintf(stderr, "machine_info = 0x%016llx (%llu)\n",
+            (unsigned long long)registers[index],
+            (unsigned long long)registers[index]);
+  } else {
+    fprintf(stderr, "r%zu = 0x%016llx (%llu)\n",
+            index,
+            (unsigned long long)registers[index],
+            (unsigned long long)registers[index]);
+  }
+}
+
 static void dump_registers(const u64* registers, instruction* insn) {
   fprintf(stderr, "==== REGISTER DUMP ====\n");
 
@@ -1195,9 +1229,16 @@ int main(int argc, char** argv) {
       }
     
     case OP_NOP:
-        break;
+      break;
 
     case OP_DUMP_REG:
+      if (insn.a >= register_count) {
+        RUNTIME_ERROR("invalid register operand");
+      }
+      dump_register(registers, insn.a);
+      break;
+
+    case OP_DUMP_REGS:
       dump_registers(registers, NULL);
       break;
 

@@ -178,7 +178,8 @@ Programs can enumerate devices by reading the device list.
 
 * `halt`: stop execution
 * `nop`: no operation
-* `dump_reg`: dump registers to the console in the emulator
+* `dump_reg reg`: dump a register to the console in the emulator
+* `dump_regs`: dump all registers to the console in the emulator
 
 ## Memory Model
 
