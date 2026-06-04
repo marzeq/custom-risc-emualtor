@@ -48,6 +48,9 @@ typedef struct {
   u64 ram_start;
   u64 ram_size;
 
+  u64 firmware_rom_start;
+  u64 firmware_rom_size;
+
   u64 device_count;
   u64 device_list;
 } machine_info;
@@ -57,6 +60,8 @@ Fields:
 
 * `ram_start`: first byte of writable RAM
 * `ram_size`: size of writable RAM in bytes
+* `firmware_rom_start`: first byte of firmware ROM
+* `firmware_rom_size`: size of firmware ROM in bytes
 * `device_count`: number of devices in the device list
 * `device_list`: address of the first device descriptor
 

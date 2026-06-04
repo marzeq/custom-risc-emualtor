@@ -33,6 +33,9 @@ typedef struct {
   u64 ram_start;
   u64 ram_size;
 
+  u64 firmware_rom_start;
+  u64 firmware_rom_size;
+
   u64 device_count;
   u64 device_list;
 } machine_info;
@@ -320,6 +323,8 @@ int main(int argc, char** argv) {
   machine_info machine_info = {
     .ram_start = firmware_rom_size + machine_info_rom_size + device_info_rom_size,
     .ram_size = ram_size,
+    .firmware_rom_start = 0,
+    .firmware_rom_size = firmware_rom_size,
     .device_count = 0,
     .device_list = 0,
   };
