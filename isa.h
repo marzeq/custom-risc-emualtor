@@ -47,6 +47,8 @@ typedef enum {
   OP_LEA    = 0x05,
   OP_LOADB  = 0x06,
   OP_STOREB = 0x07,
+  OP_LOADIL = 0x08,
+  OP_LOADIH = 0x09,
 
   /* 0x10-0x1f: arithmetic */
   OP_ADD   = 0x10,

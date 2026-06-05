@@ -100,7 +100,9 @@ Programs can enumerate devices by reading the device list.
 
 ### Data Movement
 
-* `loadi dst, imm`: load a 32-bit immediate into a register
+* `loadi dst, imm`: load a 32-bit immediate into the low bits of `dst` and zero-extend to 64 bits
+* `loadil dst, imm`: load a 32-bit immediate into the low bits of `dst` and retain the high bits of `dst`
+* `loadih dst, imm`: load a 32-bit immediate into the high bits of `dst` and retain the low bits of `dst`
 * `mov dst, src`: copy a register
 * `load dst, base, imm`: load a 64-bit value from memory at `base + imm`
 * `store src, base, imm`: store a 64-bit value to memory at `base + imm`

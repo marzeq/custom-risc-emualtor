@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <errno.h>
 
 #include "isa.h"
 
@@ -223,26 +224,43 @@ static bool find_label(const label_list* labels, const char* name, u32* address)
   return false;
 }
 
-static bool parse_u64_value(const char* token, u64* value) {
+static bool parse_u32_value(const char* token, u32* value) {
+  errno = 0;
+
   char* end = NULL;
-  unsigned long long parsed = strtoull(token, &end, 0);
+  unsigned long parsed = strtoul(token, &end, 0);
+
   if (token[0] == '\0' || end == token || *end != '\0') {
     return false;
   }
-  *value = (u64)parsed;
+
+  if (errno == ERANGE || parsed > UINT32_MAX) {
+    return false;
+  }
+
+  *value = (u32)parsed;
   return true;
 }
 
-static bool parse_u64_hex_value(const char* token, u64* value) {
+static bool parse_u32_hex_value(const char* token, u32* value) {
   if (token[0] != '0' || tolower((unsigned char)token[1]) != 'x') {
     return false;
   }
+
+  errno = 0;
+
   char* end = NULL;
-  unsigned long long parsed = strtoull(token + 2, &end, 16);
+  unsigned long parsed = strtoul(token + 2, &end, 16);
+
   if (end == token + 2 || *end != '\0') {
     return false;
   }
-  *value = (u64)parsed;
+
+  if (errno == ERANGE || parsed > UINT32_MAX) {
+    return false;
+  }
+
+  *value = (u32)parsed;
   return true;
 }
 
@@ -309,22 +327,22 @@ static bool parse_imm_or_label(const char* token, const label_list* labels, u32*
     return false;
   }
 
-  u64 parsed = 0;
+  u32 parsed = 0;
 
   if (token[0] == '0' && tolower((unsigned char)token[1]) == 'x') {
-    if (!parse_u64_hex_value(token, &parsed)) {
+    if (!parse_u32_hex_value(token, &parsed)) {
       return false;
     }
-    *value = (u32)parsed;
+    *value = parsed;
     return true;
   }
 
-  if (parse_u64_value(token, &parsed)) {
+  if (parse_u32_value(token, &parsed)) {
     if (parsed > UINT32_MAX) {
       return false;
     }
 
-    *value = (u32)parsed;
+    *value = parsed;
     return true;
   }
 
@@ -349,6 +367,8 @@ static bool opcode_from_mnemonic(const char* token, opcode* value) {
   if (equals_ignore_case(token, "lea"))   { *value = OP_LEA; return true; }
   if (equals_ignore_case(token, "loadb")) { *value = OP_LOADB; return true; }
   if (equals_ignore_case(token, "storeb")) { *value = OP_STOREB; return true; }
+  if (equals_ignore_case(token, "loadil")) { *value = OP_LOADIL; return true; }
+  if (equals_ignore_case(token, "loadih")) { *value = OP_LOADIH; return true; }
 
   /* arithmetic */
 
@@ -501,6 +521,30 @@ static void assemble_line(
       break;
 
     case OP_LOADI:
+      token = next_token(&cursor);
+      if (!token || !parse_register(token, &a)) {
+        error_at(loc, "expected destination register");
+      }
+      token = next_token(&cursor);
+      if (!token || !parse_imm_or_label(token, labels, &imm)) {
+        error_at(loc, "expected immediate or label");
+      }
+      expect_no_extra(cursor, loc);
+      break;
+
+    case OP_LOADIL:
+      token = next_token(&cursor);
+      if (!token || !parse_register(token, &a)) {
+        error_at(loc, "expected destination register");
+      }
+      token = next_token(&cursor);
+      if (!token || !parse_imm_or_label(token, labels, &imm)) {
+        error_at(loc, "expected immediate or label");
+      }
+      expect_no_extra(cursor, loc);
+      break;
+
+    case OP_LOADIH:
       token = next_token(&cursor);
       if (!token || !parse_register(token, &a)) {
         error_at(loc, "expected destination register");

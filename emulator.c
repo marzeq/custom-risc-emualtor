@@ -705,6 +705,22 @@ int main(int argc, char** argv) {
         pc_written = (insn.a == pc_idx);
         break;
 
+      case OP_LOADIL:
+        if (insn.a >= register_count) {
+          RUNTIME_ERROR("invalid destination register");
+        }
+        registers[insn.a] = (registers[insn.a] & 0xFFFFFFFF00000000u) | (u64)(i32)insn.imm;
+        pc_written = (insn.a == pc_idx);
+        break;
+
+      case OP_LOADIH:
+        if (insn.a >= register_count) {
+          RUNTIME_ERROR("invalid destination register");
+        }
+        registers[insn.a] = (registers[insn.a] & 0xFFFFFFFFu) | ((u64)(i32)insn.imm << 32);
+        pc_written = (insn.a == pc_idx);
+        break;
+
       case OP_MOV:
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
