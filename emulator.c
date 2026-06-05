@@ -140,18 +140,24 @@ static bool mmio_read(
 ) {
   const device_info* device = find_device(devices, device_count, address);
 
+  usz offset = address - device->start;
+
   if (!device) {
     return false;
   }
 
   switch (device->type) {
     case DEVICE_STDIO: {
-      int ch = getchar();
+      if (offset == 0) {
+        int ch = getchar();
 
-      if (ch == EOF) {
-        *out_value = (u64)0;
+        if (ch == EOF) {
+          *out_value = (u64)0;
+        } else {
+          *out_value = (u64)(unsigned char)ch;
+        }
       } else {
-        *out_value = (u64)(unsigned char)ch;
+        return false;
       }
 
       return true;
@@ -169,15 +175,39 @@ static bool mmio_write(
 ) {
   const device_info* device = find_device(devices, device_count, address);
 
+  usz offset = address - device->start;
+
   if (!device) {
     return false;
   }
 
   switch (device->type) {
     case DEVICE_STDIO: {
-      int ch = (int)(value & 0xFFu);
+      if (offset == 0) {
+        int ch = (int)(value & 0xFFu);
 
-      if (putchar(ch) == EOF) {
+        if (putchar(ch) == EOF) {
+          return false;
+        }
+      } else if (offset == 8) {
+        if (value != 0) {
+          // backspace-like behaviour: move cursor back and erase character
+          if (putchar('\b') == EOF) {
+            return false;
+          }
+          if (putchar(' ') == EOF) {
+            return false;
+          }
+          if (putchar('\b') == EOF) {
+            return false;
+          }
+        } else {
+          // if value is 0, just move cursor back without erasing
+          if (putchar('\b') == EOF) {
+            return false;
+          }
+        }
+      } else {
         return false;
       }
 
