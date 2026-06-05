@@ -51,9 +51,9 @@ typedef struct {
   u8 name[16];
 } device_info;
 
-enum {
+typedef enum {
   DEVICE_STDIO = 1,
-};
+} device_type;
 
 static u32 read_u32_le(const u8* bytes) {
   return (u32)bytes[0] | ((u32)bytes[1] << 8) | ((u32)bytes[2] << 16) | ((u32)bytes[3] << 24);
@@ -120,16 +120,11 @@ static memory_region get_memory_region_type(
   }
 }
 
-static const device_info* find_device(
-  const device_info* devices,
-  u64 device_count,
-  u64 address
-) {
+static const device_info* find_device(const device_info* devices, u64 device_count, u64 address) {
   for (u64 i = 0; i < device_count; i++) {
     const device_info* d = &devices[i];
 
-    if (address >= d->start &&
-        address < d->start + d->size) {
+    if (address >= d->start && address < d->start + d->size) {
       return d;
     }
   }
@@ -143,8 +138,7 @@ static bool mmio_read(
   u64 address,
   u64* out_value
 ) {
-  const device_info* device =
-      find_device(devices, device_count, address);
+  const device_info* device = find_device(devices, device_count, address);
 
   if (!device) {
     return false;
@@ -153,16 +147,17 @@ static bool mmio_read(
   switch (device->type) {
     case DEVICE_STDIO: {
       int ch = getchar();
+
       if (ch == EOF) {
         *out_value = (u64)0;
       } else {
         *out_value = (u64)(unsigned char)ch;
       }
+
       return true;
     }
 
-    default:
-      return false;
+    default: return false;
   }
 }
 
@@ -172,8 +167,7 @@ static bool mmio_write(
   u64 address,
   u64 value
 ) {
-  const device_info* device =
-      find_device(devices, device_count, address);
+  const device_info* device = find_device(devices, device_count, address);
 
   if (!device) {
     return false;
@@ -182,14 +176,15 @@ static bool mmio_write(
   switch (device->type) {
     case DEVICE_STDIO: {
       int ch = (int)(value & 0xFFu);
+
       if (putchar(ch) == EOF) {
         return false;
       }
+
       return true;
     }
 
-    default:
-      return false;
+    default: return false;
   }
 }
 
@@ -220,13 +215,14 @@ static bool read_u64_memory(
       *out_value = read_u64_le(&firmware_rom[address]);
       return true;
 
-    case MACHINE_INFO_ROM:
+    case MACHINE_INFO_ROM: {
       if (address + sizeof(*machine_info) > firmware_rom_size + machine_info_rom_size) {
         *out_value = 0;
       } else {
         *out_value = read_u64_le((u8*)machine_info + (address - firmware_rom_size));
       }
       return true;
+    }
 
     case DEVICE_INFO_ROM: {
       u64 device_info_offset = address - firmware_rom_size - machine_info_rom_size;
@@ -243,16 +239,10 @@ static bool read_u64_memory(
       return true;
 
     case MMIO:
-      return mmio_read(
-        devices,
-        machine_info->device_count,
-        address,
-        out_value
-      );
-
-    default:
-      return false;
+      return mmio_read(devices, machine_info->device_count, address, out_value);
   }
+
+  return false;
 }
 
 static bool write_u64_memory(
@@ -285,18 +275,15 @@ static bool write_u64_memory(
       return true;
 
     case MMIO:
-      return mmio_write(
-        devices,
-        machine_info->device_count,
-        address,
-        value
-      );
+      return mmio_write(devices, machine_info->device_count, address, value);
 
     case FIRMWARE_ROM:
     case MACHINE_INFO_ROM:
     case DEVICE_INFO_ROM:
       return false;
   }
+
+  return false;
 }
 
 static bool read_u8_memory(
@@ -326,18 +313,17 @@ static bool read_u8_memory(
       *out_value = read_u8(&firmware_rom[address]);
       return true;
 
-    case MACHINE_INFO_ROM:
+    case MACHINE_INFO_ROM: {
       if (address >= firmware_rom_size + machine_info_rom_size) {
         *out_value = 0;
       } else {
-        *out_value =
-          read_u8((u8*)machine_info + (address - firmware_rom_size));
+        *out_value = read_u8((u8*)machine_info + (address - firmware_rom_size));
       }
       return true;
+    }
 
     case DEVICE_INFO_ROM: {
-      u64 offset =
-        address - firmware_rom_size - machine_info_rom_size;
+      u64 offset = address - firmware_rom_size - machine_info_rom_size;
 
       if (offset >= device_info_rom_size) {
         *out_value = 0;
@@ -349,19 +335,13 @@ static bool read_u8_memory(
     }
 
     case RAM:
-      *out_value =
-        read_u8(&ram[address - machine_info->ram_start]);
+      *out_value = read_u8(&ram[address - machine_info->ram_start]);
       return true;
 
     case MMIO: {
       u64 value;
 
-      if (!mmio_read(
-            devices,
-            machine_info->device_count,
-            address,
-            &value
-          )) {
+      if (!mmio_read(devices, machine_info->device_count, address, &value)) {
         return false;
       }
 
@@ -400,19 +380,11 @@ static bool write_u8_memory(
 
   switch (region) {
     case RAM:
-      write_u8(
-        &ram[address - machine_info->ram_start],
-        value
-      );
+      write_u8(&ram[address - machine_info->ram_start], value);
       return true;
 
     case MMIO:
-      return mmio_write(
-        devices,
-        machine_info->device_count,
-        address,
-        value
-      );
+      return mmio_write(devices, machine_info->device_count, address, value);
 
     case FIRMWARE_ROM:
     case MACHINE_INFO_ROM:
@@ -433,9 +405,6 @@ static instruction decode_instruction(const u8* bytes) {
   insn.imm = read_u32_le(&bytes[4]);
   return insn;
 }
-
-#define get_memory_size(firmware_rom_size, machine_info_rom_size, ram_size, mmio_size) \
-  ((firmware_rom_size) + (machine_info_rom_size) + (ram_size) + (mmio_size))
 
 static bool jump_target_is_valid(u64 target, u64 memory_size) {
   return target < memory_size && (target % INSN_SIZE) == 0;
@@ -473,35 +442,38 @@ static void print_help(const char* program) {
 
 static void dump_register(const u64* registers, size_t index) {
   if (index < EMU_GENERAL_REGISTER_COUNT) {
-    fprintf(stderr,
-            "r%zu = 0x%016llx (%llu)\n",
-            index,
-            (unsigned long long)registers[index],
-            (unsigned long long)registers[index]);
+    fprintf(stderr, "r%zu = 0x%016llx (%llu)\n",
+      index,
+      (unsigned long long)registers[index],
+      (unsigned long long)registers[index]
+    );
     return;
   }
 
+  char* reg_name = NULL;
+
   if (index == emu_reserved_register_index(EMU_REG_SLOT_PC)) {
-    fprintf(stderr, "pc = 0x%016llx (%llu)\n",
-            (unsigned long long)registers[index],
-            (unsigned long long)registers[index]);
+    reg_name = "pc";
   } else if (index == emu_reserved_register_index(EMU_REG_SLOT_SP)) {
-    fprintf(stderr, "sp = 0x%016llx (%llu)\n",
-            (unsigned long long)registers[index],
-            (unsigned long long)registers[index]);
+    reg_name = "sp";
   } else if (index == emu_reserved_register_index(EMU_REG_SLOT_FLAGS)) {
-    fprintf(stderr, "flags = 0x%016llx (%llu)\n",
-            (unsigned long long)registers[index],
-            (unsigned long long)registers[index]);
+    reg_name = "flags";
   } else if (index == emu_reserved_register_index(EMU_REG_SLOT_MACHINE_INFO)) {
-    fprintf(stderr, "machine_info = 0x%016llx (%llu)\n",
-            (unsigned long long)registers[index],
-            (unsigned long long)registers[index]);
+    reg_name = "machine_info";
   } else {
     fprintf(stderr, "r%zu = 0x%016llx (%llu)\n",
-            index,
-            (unsigned long long)registers[index],
-            (unsigned long long)registers[index]);
+      index,
+      (unsigned long long)registers[index],
+      (unsigned long long)registers[index]
+    );
+  }
+
+  if (reg_name) {
+    fprintf(stderr, "%s = 0x%016llx (%llu)\n",
+      reg_name,
+      (unsigned long long)registers[index],
+      (unsigned long long)registers[index]
+    );
   }
 }
 
@@ -509,34 +481,38 @@ static void dump_registers(const u64* registers, instruction* insn) {
   fprintf(stderr, "==== REGISTER DUMP ====\n");
 
   for (usz i = 0; i < EMU_GENERAL_REGISTER_COUNT; i++) {
-    fprintf(stderr,
-            "r%-2zu = 0x%016llx (%llu)\n",
-            i,
-            (unsigned long long)registers[i],
-            (unsigned long long)registers[i]);
+    fprintf(stderr, "r%-2zu = 0x%016llx (%llu)\n",
+      i,
+      (unsigned long long)registers[i],
+      (unsigned long long)registers[i]
+    );
   }
   
   fprintf(stderr, "----------------------------\n");
 
   fprintf(stderr, "pc           = 0x%016llx\n",
-          (unsigned long long)registers[emu_reserved_register_index(EMU_REG_SLOT_PC)]);
+    (unsigned long long)registers[emu_reserved_register_index(EMU_REG_SLOT_PC)]
+  );
   fprintf(stderr, "sp           = 0x%016llx\n",
-          (unsigned long long)registers[emu_reserved_register_index(EMU_REG_SLOT_SP)]);
+    (unsigned long long)registers[emu_reserved_register_index(EMU_REG_SLOT_SP)]
+  );
   fprintf(stderr, "flags        = 0x%016llx\n",
-          (unsigned long long)registers[emu_reserved_register_index(EMU_REG_SLOT_FLAGS)]);
+    (unsigned long long)registers[emu_reserved_register_index(EMU_REG_SLOT_FLAGS)]
+  );
   fprintf(stderr, "machine_info = 0x%016llx\n",
-          (unsigned long long)registers[emu_reserved_register_index(EMU_REG_SLOT_MACHINE_INFO)]);
+    (unsigned long long)registers[emu_reserved_register_index(EMU_REG_SLOT_MACHINE_INFO)]
+  );
 
   if (insn) {
     fprintf(stderr, "=== INSTRUCTION DUMP ===\n");
 
-    fprintf(stderr,
-          "op=0x%02x a=%u b=%u c=%u imm=%u\n",
-          insn->opcode,
-          insn->a,
-          insn->b,
-          insn->c,
-          insn->imm);
+    fprintf(stderr, "op=0x%02x a=%u b=%u c=%u imm=%u\n",
+      insn->opcode,
+      insn->a,
+      insn->b,
+      insn->c,
+      insn->imm
+    );
   }
 }
 
@@ -684,7 +660,7 @@ int main(int argc, char** argv) {
 
   terminal_raw_enable();
 
-  for (;;) {
+  while (true) {
     u64 pc = registers[pc_idx];
 
     instruction insn = decode_instruction(&firmware_rom[pc]);
@@ -710,8 +686,8 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid destination register");
         }
         registers[insn.a] =
-            (registers[insn.a] & 0xFFFFFFFF00000000ULL)
-            | (u64)(u32)insn.imm;
+          (registers[insn.a] & 0xFFFFFFFF00000000ULL)
+          | (u64)(u32)insn.imm;
         pc_written = (insn.a == pc_idx);
         break;
 
@@ -720,8 +696,8 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid destination register");
         }
         registers[insn.a] =
-            (registers[insn.a] & 0x00000000FFFFFFFFULL)
-            | ((u64)(u32)insn.imm << 32);
+          (registers[insn.a] & 0x00000000FFFFFFFFULL)
+          | ((u64)(u32)insn.imm << 32);
         pc_written = (insn.a == pc_idx);
         break;
 
@@ -931,18 +907,18 @@ int main(int argc, char** argv) {
 
         u64 address = registers[insn.b] + (i64)(i32)insn.imm;
         if (!read_u64_memory(
-              address,
-              firmware_rom_size,
-              machine_info_rom_size,
-              device_info_rom_size,
-              ram_size,
-              mmio_size,
-              firmware_rom,
-              &machine_info,
-              devices,
-              ram,
-              &registers[insn.a]
-            )) {
+          address,
+          firmware_rom_size,
+          machine_info_rom_size,
+          device_info_rom_size,
+          ram_size,
+          mmio_size,
+          firmware_rom,
+          &machine_info,
+          devices,
+          ram,
+          &registers[insn.a]
+        )) {
           RUNTIME_ERROR("illegal load address");
         }
         pc_written = (insn.a == pc_idx);
@@ -956,18 +932,18 @@ int main(int argc, char** argv) {
 
         u64 address = registers[insn.b] + (i64)(i32)insn.imm;
         if (!write_u64_memory(
-              address,
-              firmware_rom_size,
-              machine_info_rom_size,
-              device_info_rom_size,
-              ram_size,
-              mmio_size,
-              firmware_rom,
-              &machine_info,
-              devices,
-              ram,
-              registers[insn.a]
-            )) {
+          address,
+          firmware_rom_size,
+          machine_info_rom_size,
+          device_info_rom_size,
+          ram_size,
+          mmio_size,
+          firmware_rom,
+          &machine_info,
+          devices,
+          ram,
+          registers[insn.a]
+        )) {
           RUNTIME_ERROR("illegal store address");
         }
         break;
@@ -982,18 +958,18 @@ int main(int argc, char** argv) {
         u64 address = registers[insn.b] + (i64)(i32)insn.imm;
 
         if (!read_u8_memory(
-              address,
-              firmware_rom_size,
-              machine_info_rom_size,
-              device_info_rom_size,
-              ram_size,
-              mmio_size,
-              firmware_rom,
-              &machine_info,
-              devices,
-              ram,
-              &value
-            )) {
+          address,
+          firmware_rom_size,
+          machine_info_rom_size,
+          device_info_rom_size,
+          ram_size,
+          mmio_size,
+          firmware_rom,
+          &machine_info,
+          devices,
+          ram,
+          &value
+        )) {
           RUNTIME_ERROR("illegal load address");
         }
 
@@ -1010,18 +986,18 @@ int main(int argc, char** argv) {
         u64 address = registers[insn.b] + (i64)(i32)insn.imm;
 
         if (!write_u8_memory(
-              address,
-              firmware_rom_size,
-              machine_info_rom_size,
-              device_info_rom_size,
-              ram_size,
-              mmio_size,
-              firmware_rom,
-              &machine_info,
-              devices,
-              ram,
-              (u8)registers[insn.a]
-            )) {
+          address,
+          firmware_rom_size,
+          machine_info_rom_size,
+          device_info_rom_size,
+          ram_size,
+          mmio_size,
+          firmware_rom,
+          &machine_info,
+          devices,
+          ram,
+          (u8)registers[insn.a]
+        )) {
           RUNTIME_ERROR("illegal store address");
         }
 
@@ -1045,43 +1021,41 @@ int main(int argc, char** argv) {
         registers[pc_idx] = registers[insn.a];
         continue;
 
-      case OP_CMP:
+      case OP_CMP: {
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
-        {
-          u64 left = registers[insn.a];
-          u64 right = registers[insn.b];
-          u64 flags = 0;
-          if (left == right) {
-            flags |= FLAG_ZERO;
-          } else if (left < right) {
-            flags |= FLAG_LESS;
-          } else {
-            flags |= FLAG_GREATER;
-          }
-          registers[flags_idx] = flags;
+        u64 left = registers[insn.a];
+        u64 right = registers[insn.b];
+        u64 flags = 0;
+        if (left == right) {
+          flags |= FLAG_ZERO;
+        } else if (left < right) {
+          flags |= FLAG_LESS;
+        } else {
+          flags |= FLAG_GREATER;
         }
+        registers[flags_idx] = flags;
         break;
+      }
 
-      case OP_CMPI:
+      case OP_CMPI: {
         if (insn.a >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
-        {
-          u64 left = registers[insn.a];
-          u64 right = (u64)(i32)insn.imm;
-          u64 flags = 0;
-          if (left == right) {
-            flags |= FLAG_ZERO;
-          } else if (left < right) {
-            flags |= FLAG_LESS;
-          } else {
-            flags |= FLAG_GREATER;
-          }
-          registers[flags_idx] = flags;
+        u64 left = registers[insn.a];
+        u64 right = (u64)(i32)insn.imm;
+        u64 flags = 0;
+        if (left == right) {
+          flags |= FLAG_ZERO;
+        } else if (left < right) {
+          flags |= FLAG_LESS;
+        } else {
+          flags |= FLAG_GREATER;
         }
+        registers[flags_idx] = flags;
         break;
+      }
 
       case OP_JE:
       case OP_JNE:
@@ -1098,7 +1072,7 @@ int main(int argc, char** argv) {
         }
         break;
 
-      case OP_PUSH:
+      case OP_PUSH: {
         if (insn.a >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
@@ -1107,23 +1081,24 @@ int main(int argc, char** argv) {
         }
         registers[sp_idx] -= sizeof(u64);
         if (!write_u64_memory(
-              registers[sp_idx],
-              firmware_rom_size,
-              machine_info_rom_size,
-              device_info_rom_size,
-              ram_size,
-              mmio_size,
-              firmware_rom,
-              &machine_info,
-              devices,
-              ram,
-              registers[insn.a]
-            )) {
+          registers[sp_idx],
+          firmware_rom_size,
+          machine_info_rom_size,
+          device_info_rom_size,
+          ram_size,
+          mmio_size,
+          firmware_rom,
+          &machine_info,
+          devices,
+          ram,
+          registers[insn.a]
+        )) {
           RUNTIME_ERROR("stack write failed");
         }
         break;
+      }
 
-      case OP_POP:
+      case OP_POP: {
         if (insn.a >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
@@ -1131,24 +1106,25 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("stack underflow");
         }
         if (!read_u64_memory(
-              registers[sp_idx],
-              firmware_rom_size,
-              machine_info_rom_size,
-              device_info_rom_size,
-              ram_size,
-              mmio_size,
-              firmware_rom,
-              &machine_info,
-              devices,
-              ram,
-              &registers[insn.a]
-            )) {
+            registers[sp_idx],
+            firmware_rom_size,
+            machine_info_rom_size,
+            device_info_rom_size,
+            ram_size,
+            mmio_size,
+            firmware_rom,
+            &machine_info,
+            devices,
+            ram,
+            &registers[insn.a]
+          )) {
           RUNTIME_ERROR("stack read failed");
         }
         registers[sp_idx] += sizeof(u64);
         break;
+      }
 
-      case OP_CALL:
+      case OP_CALL: {
         if (!jump_target_is_valid((u64)insn.imm, ram_size)) {
           RUNTIME_ERROR("invalid call target");
         }
@@ -1161,25 +1137,26 @@ int main(int argc, char** argv) {
         registers[sp_idx] -= sizeof(u64);
 
         if (!write_u64_memory(
-              registers[sp_idx],
-              firmware_rom_size,
-              machine_info_rom_size,
-              device_info_rom_size,
-              ram_size,
-              mmio_size,
-              firmware_rom,
-              &machine_info,
-              devices,
-              ram,
-              next_pc
-            )) {
+          registers[sp_idx],
+          firmware_rom_size,
+          machine_info_rom_size,
+          device_info_rom_size,
+          ram_size,
+          mmio_size,
+          firmware_rom,
+          &machine_info,
+          devices,
+          ram,
+          next_pc
+        )) {
           RUNTIME_ERROR("stack write failed");
         }
 
         registers[pc_idx] = (u64)insn.imm;
         continue;
+      }
       
-      case OP_CALLR:
+      case OP_CALLR: {
         if (insn.a >= register_count) {
           RUNTIME_ERROR("invalid target register");
         }
@@ -1196,45 +1173,45 @@ int main(int argc, char** argv) {
         registers[sp_idx] -= sizeof(u64);
 
         if (!write_u64_memory(
-              registers[sp_idx],
-              firmware_rom_size,
-              machine_info_rom_size,
-              device_info_rom_size,
-              ram_size,
-              mmio_size,
-              firmware_rom,
-              &machine_info,
-              devices,
-              ram,
-              next_pc
-            )) {
+          registers[sp_idx],
+          firmware_rom_size,
+          machine_info_rom_size,
+          device_info_rom_size,
+          ram_size,
+          mmio_size,
+          firmware_rom,
+          &machine_info,
+          devices,
+          ram,
+          next_pc
+        )) {
           RUNTIME_ERROR("stack write failed");
         }
 
         registers[pc_idx] = registers[insn.a];
         continue;
+      }
 
       case OP_RET: {
         u64 return_address;
 
-        if (registers[sp_idx] < ram_start ||
-            registers[sp_idx] >= ram_end) {
+        if (registers[sp_idx] < ram_start || registers[sp_idx] >= ram_end) {
           RUNTIME_ERROR("stack underflow");
         }
 
         if (!read_u64_memory(
-              registers[sp_idx],
-              firmware_rom_size,
-              machine_info_rom_size,
-              device_info_rom_size,
-              ram_size,
-              mmio_size,
-              firmware_rom,
-              &machine_info,
-              devices,
-              ram,
-              &return_address
-            )) {
+          registers[sp_idx],
+          firmware_rom_size,
+          machine_info_rom_size,
+          device_info_rom_size,
+          ram_size,
+          mmio_size,
+          firmware_rom,
+          &machine_info,
+          devices,
+          ram,
+          &return_address
+        )) {
           RUNTIME_ERROR("stack read failed");
         }
 

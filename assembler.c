@@ -356,81 +356,81 @@ static bool parse_imm_or_label(const char* token, const label_list* labels, u32*
 }
 
 static bool opcode_from_mnemonic(const char* token, opcode* value) {
-  if (equals_ignore_case(token, "halt"))  { *value = OP_HALT; return true; }
+  if (equals_ignore_case(token, "halt"))      { *value = OP_HALT; return true; }
 
-  /* data movement */
+  // data movement
 
-  if (equals_ignore_case(token, "loadi")) { *value = OP_LOADI; return true; }
-  if (equals_ignore_case(token, "mov"))   { *value = OP_MOV; return true; }
-  if (equals_ignore_case(token, "load"))  { *value = OP_LOAD; return true; }
-  if (equals_ignore_case(token, "store")) { *value = OP_STORE; return true; }
-  if (equals_ignore_case(token, "lea"))   { *value = OP_LEA; return true; }
-  if (equals_ignore_case(token, "loadb")) { *value = OP_LOADB; return true; }
-  if (equals_ignore_case(token, "storeb")) { *value = OP_STOREB; return true; }
-  if (equals_ignore_case(token, "loadil")) { *value = OP_LOADIL; return true; }
-  if (equals_ignore_case(token, "loadih")) { *value = OP_LOADIH; return true; }
+  if (equals_ignore_case(token, "loadi"))     { *value = OP_LOADI; return true; }
+  if (equals_ignore_case(token, "mov"))       { *value = OP_MOV; return true; }
+  if (equals_ignore_case(token, "load"))      { *value = OP_LOAD; return true; }
+  if (equals_ignore_case(token, "store"))     { *value = OP_STORE; return true; }
+  if (equals_ignore_case(token, "lea"))       { *value = OP_LEA; return true; }
+  if (equals_ignore_case(token, "loadb"))     { *value = OP_LOADB; return true; }
+  if (equals_ignore_case(token, "storeb"))    { *value = OP_STOREB; return true; }
+  if (equals_ignore_case(token, "loadil"))    { *value = OP_LOADIL; return true; }
+  if (equals_ignore_case(token, "loadih"))    { *value = OP_LOADIH; return true; }
 
-  /* arithmetic */
+  // arithmetic
 
-  if (equals_ignore_case(token, "add")) { *value = OP_ADD; return true; }
-  if (equals_ignore_case(token, "sub")) { *value = OP_SUB; return true; }
-  if (equals_ignore_case(token, "mul")) { *value = OP_MUL; return true; }
-  if (equals_ignore_case(token, "div")) { *value = OP_DIV; return true; }
-  if (equals_ignore_case(token, "mod")) { *value = OP_MOD; return true; }
+  if (equals_ignore_case(token, "add"))       { *value = OP_ADD; return true; }
+  if (equals_ignore_case(token, "sub"))       { *value = OP_SUB; return true; }
+  if (equals_ignore_case(token, "mul"))       { *value = OP_MUL; return true; }
+  if (equals_ignore_case(token, "div"))       { *value = OP_DIV; return true; }
+  if (equals_ignore_case(token, "mod"))       { *value = OP_MOD; return true; }
 
-  if (equals_ignore_case(token, "addi")) { *value = OP_ADDI; return true; }
-  if (equals_ignore_case(token, "subi")) { *value = OP_SUBI; return true; }
-  if (equals_ignore_case(token, "muli")) { *value = OP_MULI; return true; }
-  if (equals_ignore_case(token, "divi")) { *value = OP_DIVI; return true; }
-  if (equals_ignore_case(token, "modi")) { *value = OP_MODI; return true; }
+  if (equals_ignore_case(token, "addi"))      { *value = OP_ADDI; return true; }
+  if (equals_ignore_case(token, "subi"))      { *value = OP_SUBI; return true; }
+  if (equals_ignore_case(token, "muli"))      { *value = OP_MULI; return true; }
+  if (equals_ignore_case(token, "divi"))      { *value = OP_DIVI; return true; }
+  if (equals_ignore_case(token, "modi"))      { *value = OP_MODI; return true; }
 
-  /* bitwise */
+  // bitwise
 
-  if (equals_ignore_case(token, "and")) { *value = OP_AND; return true; }
-  if (equals_ignore_case(token, "or"))  { *value = OP_OR; return true; }
-  if (equals_ignore_case(token, "xor")) { *value = OP_XOR; return true; }
-  if (equals_ignore_case(token, "not")) { *value = OP_NOT; return true; }
+  if (equals_ignore_case(token, "and"))       { *value = OP_AND; return true; }
+  if (equals_ignore_case(token, "or"))        { *value = OP_OR; return true; }
+  if (equals_ignore_case(token, "xor"))       { *value = OP_XOR; return true; }
+  if (equals_ignore_case(token, "not"))       { *value = OP_NOT; return true; }
 
-  if (equals_ignore_case(token, "andi")) { *value = OP_ANDI; return true; }
-  if (equals_ignore_case(token, "ori"))  { *value = OP_ORI; return true; }
-  if (equals_ignore_case(token, "xori")) { *value = OP_XORI; return true; }
+  if (equals_ignore_case(token, "andi"))      { *value = OP_ANDI; return true; }
+  if (equals_ignore_case(token, "ori"))       { *value = OP_ORI; return true; }
+  if (equals_ignore_case(token, "xori"))      { *value = OP_XORI; return true; }
 
-  if (equals_ignore_case(token, "shl")) { *value = OP_SHL; return true; }
-  if (equals_ignore_case(token, "shr")) { *value = OP_SHR; return true; }
+  if (equals_ignore_case(token, "shl"))       { *value = OP_SHL; return true; }
+  if (equals_ignore_case(token, "shr"))       { *value = OP_SHR; return true; }
 
-  if (equals_ignore_case(token, "shli")) { *value = OP_SHLI; return true; }
-  if (equals_ignore_case(token, "shri")) { *value = OP_SHRI; return true; }
+  if (equals_ignore_case(token, "shli"))      { *value = OP_SHLI; return true; }
+  if (equals_ignore_case(token, "shri"))      { *value = OP_SHRI; return true; }
 
-  /* compare / branch */
+  // compare / branch
 
-  if (equals_ignore_case(token, "cmp"))  { *value = OP_CMP; return true; }
-  if (equals_ignore_case(token, "cmpi")) { *value = OP_CMPI; return true; }
+  if (equals_ignore_case(token, "cmp"))       { *value = OP_CMP; return true; }
+  if (equals_ignore_case(token, "cmpi"))      { *value = OP_CMPI; return true; }
 
-  if (equals_ignore_case(token, "jmp"))  { *value = OP_JMP; return true; }
-  if (equals_ignore_case(token, "jmpr")) { *value = OP_JMPR; return true; }
+  if (equals_ignore_case(token, "jmp"))       { *value = OP_JMP; return true; }
+  if (equals_ignore_case(token, "jmpr"))      { *value = OP_JMPR; return true; }
 
-  if (equals_ignore_case(token, "je"))  { *value = OP_JE; return true; }
-  if (equals_ignore_case(token, "jne")) { *value = OP_JNE; return true; }
-  if (equals_ignore_case(token, "jl"))  { *value = OP_JL; return true; }
-  if (equals_ignore_case(token, "jle")) { *value = OP_JLE; return true; }
-  if (equals_ignore_case(token, "jg"))  { *value = OP_JG; return true; }
-  if (equals_ignore_case(token, "jge")) { *value = OP_JGE; return true; }
+  if (equals_ignore_case(token, "je"))        { *value = OP_JE; return true; }
+  if (equals_ignore_case(token, "jne"))       { *value = OP_JNE; return true; }
+  if (equals_ignore_case(token, "jl"))        { *value = OP_JL; return true; }
+  if (equals_ignore_case(token, "jle"))       { *value = OP_JLE; return true; }
+  if (equals_ignore_case(token, "jg"))        { *value = OP_JG; return true; }
+  if (equals_ignore_case(token, "jge"))       { *value = OP_JGE; return true; }
 
-  /* calls */
+  // calls
 
-  if (equals_ignore_case(token, "call"))  { *value = OP_CALL; return true; }
-  if (equals_ignore_case(token, "callr")) { *value = OP_CALLR; return true; }
-  if (equals_ignore_case(token, "ret"))   { *value = OP_RET; return true; }
+  if (equals_ignore_case(token, "call"))      { *value = OP_CALL; return true; }
+  if (equals_ignore_case(token, "callr"))     { *value = OP_CALLR; return true; }
+  if (equals_ignore_case(token, "ret"))       { *value = OP_RET; return true; }
 
-  /* stack */
+  // stack
 
-  if (equals_ignore_case(token, "push")) { *value = OP_PUSH; return true; }
-  if (equals_ignore_case(token, "pop"))  { *value = OP_POP; return true; }
+  if (equals_ignore_case(token, "push"))      { *value = OP_PUSH; return true; }
+  if (equals_ignore_case(token, "pop"))       { *value = OP_POP; return true; }
 
-  /* misc */
+  // misc
 
-  if (equals_ignore_case(token, "nop")) { *value = OP_NOP; return true; }
-  if (equals_ignore_case(token, "dump_reg")) { *value = OP_DUMP_REG; return true; }
+  if (equals_ignore_case(token, "nop"))       { *value = OP_NOP; return true; }
+  if (equals_ignore_case(token, "dump_reg"))  { *value = OP_DUMP_REG; return true; }
   if (equals_ignore_case(token, "dump_regs")) { *value = OP_DUMP_REGS; return true; }
 
   return false;
@@ -438,49 +438,65 @@ static bool opcode_from_mnemonic(const char* token, opcode* value) {
 
 static char* find_label_candidate(char* text) {
   char* cursor = text;
+
   if (!is_ident_start(*cursor)) {
     return NULL;
   }
+
   cursor++;
+
   while (is_ident_char(*cursor)) {
     cursor++;
   }
+
   if (*cursor == ':') {
     return cursor;
   }
+
   return NULL;
 }
 
 static char* consume_labels(char* line, label_list* labels, u32 address, source_location loc) {
   char* cursor = normalize_line(line);
+
   while (*cursor) {
     char* label_end = find_label_candidate(cursor);
+
     if (!label_end) {
       break;
     }
+
     char saved = *label_end;
     *label_end = '\0';
     label_list_add(labels, cursor, (usz)(label_end - cursor), address, loc);
+
     *label_end = saved;
+
     cursor = trim_left(label_end + 1);
   }
+
   return cursor;
 }
 
 static char* skip_labels(char* line) {
   char* cursor = normalize_line(line);
+
   while (*cursor) {
     char* label_end = find_label_candidate(cursor);
+
     if (!label_end) {
       break;
     }
+
     cursor = trim_left(label_end + 1);
   }
+
   return cursor;
 }
 
 static void expect_no_extra(char* cursor, source_location loc) {
   cursor = trim_left(cursor);
+
   if (*cursor != '\0') {
     error_at(loc, "unexpected trailing tokens");
   }
@@ -494,16 +510,19 @@ static void assemble_line(
   source_location loc
 ) {
   char* cursor = normalize_line(line);
+
   if (*cursor == '\0') {
     return;
   }
 
   char* mnemonic = next_token(&cursor);
+
   if (!mnemonic) {
     return;
   }
 
   opcode op = 0;
+
   if (!opcode_from_mnemonic(mnemonic, &op)) {
     error_at(loc, "unknown instruction");
     exit(1);
@@ -947,11 +966,11 @@ int main(int argc, char** argv) {
     }
 
     char* cursor = consume_labels(
-        line,
-        &labels,
-        (u32)(instruction_count * INSN_SIZE),
-        loc
-        );
+      line,
+      &labels,
+      (u32)(instruction_count * INSN_SIZE),
+      loc
+    );
 
     cursor = normalize_line(cursor);
 
@@ -998,12 +1017,12 @@ int main(int argc, char** argv) {
 
     if (*cursor != '\0') {
       assemble_line(
-          cursor,
-          &labels,
-          output,
-          instruction_index,
-          loc
-          );
+        cursor,
+        &labels,
+        output,
+        instruction_index,
+        loc
+      );
 
       instruction_index++;
     }
