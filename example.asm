@@ -21,6 +21,10 @@ loop:
   load r0, r3, 0   // read a character
   cmpi r0, 0x7f    // check if it's backspace
   je   backspace
+  cmpi r0, 0x00    // check if it's null (no input)
+  je   loop_end
+  cmpi r0, 0x0a    // check if it's newline
+  je   loop_end
 putch:
   store r0, r3, 0  // write the character back
   jmp loop
@@ -28,5 +32,9 @@ backspace:
   loadi r0, 1      // tell device to perform backspace
   store r0, r3, 8
   jmp loop
+loop_end:
+  loadi r0, 0x0a
+  store r0, r3, 0
+  ret
 fail:
   halt
