@@ -701,7 +701,7 @@ int main(int argc, char** argv) {
         if (insn.a >= register_count) {
           RUNTIME_ERROR("invalid destination register");
         }
-        registers[insn.a] = (u64)(i32)insn.imm;
+        registers[insn.a] = (u64)(u32)insn.imm;
         pc_written = (insn.a == pc_idx);
         break;
 
@@ -709,7 +709,9 @@ int main(int argc, char** argv) {
         if (insn.a >= register_count) {
           RUNTIME_ERROR("invalid destination register");
         }
-        registers[insn.a] = (registers[insn.a] & 0xFFFFFFFF00000000u) | (u64)(i32)insn.imm;
+        registers[insn.a] =
+            (registers[insn.a] & 0xFFFFFFFF00000000ULL)
+            | (u64)(u32)insn.imm;
         pc_written = (insn.a == pc_idx);
         break;
 
@@ -717,7 +719,9 @@ int main(int argc, char** argv) {
         if (insn.a >= register_count) {
           RUNTIME_ERROR("invalid destination register");
         }
-        registers[insn.a] = (registers[insn.a] & 0xFFFFFFFFu) | ((u64)(i32)insn.imm << 32);
+        registers[insn.a] =
+            (registers[insn.a] & 0x00000000FFFFFFFFULL)
+            | ((u64)(u32)insn.imm << 32);
         pc_written = (insn.a == pc_idx);
         break;
 
