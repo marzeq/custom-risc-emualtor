@@ -816,9 +816,6 @@ int main(int argc, char** argv) {
         if (registers[insn.c] == 0) {
           RUNTIME_ERROR("division by zero");
         }
-        if ((i32)insn.imm == 0) {
-          RUNTIME_ERROR("division by zero");
-        }
         registers[insn.a] = registers[insn.b] % (u64)(i32)insn.imm;
         pc_written = (insn.a == pc_idx);
         break;
