@@ -1280,7 +1280,7 @@ int main(int argc, char** argv) {
 
 done:
 #ifdef DEBUG
-  dump_registers(registers, NULL);
+  dump_registers(registers);
 #endif
   if (binary_file) {
     fclose(binary_file);
