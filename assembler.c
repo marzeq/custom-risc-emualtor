@@ -863,6 +863,7 @@ static usz assemble_line(
 
 usz emit_directive(
   char* line,
+  label_list* labels,
   u8* output,
   source_location loc
 ) {
@@ -891,7 +892,7 @@ usz emit_directive(
     }
 
     u64 value = 0;
-    if (!parse_imm_or_label(token, NULL, &value) || value > 0xFF) {
+    if (!parse_imm_or_label(token, labels, &value) || value > 0xFF) {
       error_at(loc, "expected byte value in range 0-255");
       exit(1);
     }
@@ -899,6 +900,22 @@ usz emit_directive(
     *output = (u8)value;
 
     return 1;
+  } else if (equals_ignore_case(directive, ".quad")) {
+    char* token = next_token(&cursor);
+    if (!token) {
+      error_at(loc, "expected quad value");
+      exit(1);
+    }
+
+    u64 value = 0;
+    if (!parse_imm_or_label(token, labels, &value)) {
+      error_at(loc, "expected quad value");
+      exit(1);
+    }
+
+    memcpy(output, &value, sizeof(value));
+
+    return 8;
   }
 
   error_at(loc, "unknown directive");
@@ -1009,6 +1026,8 @@ static usz directive_size(const char* line, char** entry_point, bool* shift_labe
     return size_for_instruction_type(opcode_instruction_type(OP_JMP));
   } else if (equals_ignore_case(directive, ".byte")) {
     return 1;
+  } else if (equals_ignore_case(directive, ".quad")) {
+    return 8;
   }
 
   free(copy);
@@ -1177,7 +1196,7 @@ int main(int argc, char** argv) {
 
     usz written = 0;
     if (*cursor == '.') {
-      written = emit_directive(cursor, output + output_offset, loc);
+      written = emit_directive(cursor, &labels, output + output_offset, loc);
     } else {
       written = assemble_line(cursor, &labels, output + output_offset, loc);
     }
