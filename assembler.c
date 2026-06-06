@@ -959,7 +959,7 @@ static usz assembled_instruction_size(const char* line) {
   return size_for_instruction_type(opcode_instruction_type(op));
 }
 
-static usz directive_size(const char* line, char** entry_point, source_location loc) {
+static usz directive_size(const char* line, char** entry_point, bool* shift_labels, source_location loc) {
   char* copy = strdup(line);
   if (!copy) {
     die("out of memory");
@@ -989,6 +989,7 @@ static usz directive_size(const char* line, char** entry_point, source_location 
 
     *entry_point = strdup(token);
 
+    *shift_labels = false;
     return size_for_instruction_type(opcode_instruction_type(OP_JMP));
   }
 
@@ -1045,6 +1046,7 @@ int main(int argc, char** argv) {
   char* entry_point = NULL;
   label_list labels = {0};
   usz output_size = 0;
+  usz label_address_offset = 0;
 
   source_location loc = {
     .file = input_path,
@@ -1073,7 +1075,7 @@ int main(int argc, char** argv) {
       continue;
     }
 
-    char* cursor = consume_labels(line, &labels, (u64)output_size, loc);
+    char* cursor = consume_labels(line, &labels, (u64)label_address_offset, loc);
 
     cursor = normalize_line(cursor);
 
@@ -1083,8 +1085,9 @@ int main(int argc, char** argv) {
     }
 
     usz s = 0;
+    bool shift_labels = true;
     if (*cursor == '.') {
-      s = directive_size(cursor, &entry_point, loc);
+      s = directive_size(cursor, &entry_point, &shift_labels, loc);
     } else {
       s = assembled_instruction_size(cursor);
     }
@@ -1093,14 +1096,22 @@ int main(int argc, char** argv) {
       error_at(loc, "unknown instruction");
     }
     output_size += s;
+    if (shift_labels) {
+      label_address_offset += s;
+    }
 
     loc.line++;
   }
 
-  // check for entry point existence before second pass to avoid doing unnecessary work if entry point is missing
   u64 entry_address = 0;
   if (entry_point && !find_label(&labels, entry_point, &entry_address)) {
     dief("entry point label '%s' not found", entry_point);
+  }
+
+  if (entry_point) {
+    for (usz i = 0; i < labels.count; i++) {
+      labels.items[i].address += size_for_instruction_type(opcode_instruction_type(OP_JMP));
+    }
   }
 
   loc.file = input_path;
