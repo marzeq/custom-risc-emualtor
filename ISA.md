@@ -1,20 +1,54 @@
 # ISA Reference
 
-This project uses a fixed-width 8-byte little-endian instruction format shared by the emulator and assembler.
+This project uses a custom RISC-style instruction set shared by the emulator and assembler.
 
 ## Instruction Format
 
-Each instruction is encoded as:
+Each instruction is encoded as either:
 
-* byte 0: opcode
-* byte 1: register `a`
-* byte 2: register `b`
-* byte 3: register `c`
-* bytes 4-7: 32-bit immediate value, little-endian
+```c
+typedef struct {
+  u8 opcode;
+} instruction_0reg;
 
-All instruction addresses are byte offsets from the start of ROM. Jumps must target instruction boundaries, so valid targets are multiples of 8.
+typedef struct {
+  u8 opcode;
+  u8 a;
+} instruction_1reg;
 
-Technically, nothing stops you from emitting valid instructions in RAM and jumping to them.
+typedef struct {
+  u8 opcode;
+  u8 a;
+  u8 b;
+} instruction_2reg;
+
+typedef struct {
+  u8 opcode;
+  u8 a;
+  u8 b;
+  u8 c;
+} instruction_3reg;
+
+typedef struct {
+  u8 opcode;
+  u64 imm;
+} instruction_0reg_imm;
+
+typedef struct {
+  u8 opcode;
+  u8 a;
+  u64 imm;
+} instruction_1reg_imm;
+
+typedef struct {
+  u8 opcode;
+  u8 a;
+  u8 b;
+  u64 imm;
+} instruction_2reg_imm;
+```
+
+based on the number of register operands and whether there is an immediate operand.
 
 ## Registers
 

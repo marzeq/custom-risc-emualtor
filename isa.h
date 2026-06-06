@@ -13,19 +13,68 @@ typedef uint16_t u16;
 typedef uint8_t u8;
 typedef size_t usz;
 
-typedef struct {
+typedef struct [[gnu::packed]] {
+  u8 opcode;
+} instruction_0reg;
+
+typedef struct [[gnu::packed]] {
+  u8 opcode;
+  u8 a;
+} instruction_1reg;
+
+typedef struct [[gnu::packed]] {
+  u8 opcode;
+  u8 a;
+  u8 b;
+} instruction_2reg;
+
+typedef struct [[gnu::packed]] {
   u8 opcode;
   u8 a;
   u8 b;
   u8 c;
-  u32 imm;
-} instruction;
+} instruction_3reg;
 
-#define INSN_SIZE 8
+typedef struct [[gnu::packed]] {
+  u8 opcode;
+  u64 imm;
+} instruction_0reg_imm;
 
-#define _STRINGIFY(x) #x
-#define STRINGIFY(x) _STRINGIFY(x)
-static_assert(sizeof(instruction) == INSN_SIZE, "instruction struct must be exactly " STRINGIFY(INSN_SIZE) " bytes");
+typedef struct [[gnu::packed]] {
+  u8 opcode;
+  u8 a;
+  u64 imm;
+} instruction_1reg_imm;
+
+typedef struct [[gnu::packed]] {
+  u8 opcode;
+  u8 a;
+  u8 b;
+  u64 imm;
+} instruction_2reg_imm;
+
+typedef enum {
+  INSN_TYPE_0REG,
+  INSN_TYPE_1REG,
+  INSN_TYPE_2REG,
+  INSN_TYPE_3REG,
+  INSN_TYPE_0REG_IMM,
+  INSN_TYPE_1REG_IMM,
+  INSN_TYPE_2REG_IMM,
+} instruction_type;
+
+static inline usz size_for_instruction_type(instruction_type type) {
+  switch (type) {
+    case INSN_TYPE_0REG: return sizeof(instruction_0reg);
+    case INSN_TYPE_1REG: return sizeof(instruction_1reg);
+    case INSN_TYPE_2REG: return sizeof(instruction_2reg);
+    case INSN_TYPE_3REG: return sizeof(instruction_3reg);
+    case INSN_TYPE_0REG_IMM: return sizeof(instruction_0reg_imm);
+    case INSN_TYPE_1REG_IMM: return sizeof(instruction_1reg_imm);
+    case INSN_TYPE_2REG_IMM: return sizeof(instruction_2reg_imm);
+    default: assert(false && "invalid instruction type"); return 0;
+  }
+}
 
 #define EMU_GENERAL_REGISTER_COUNT 16
 
@@ -47,8 +96,6 @@ typedef enum {
   OP_LEA       = 0x05,
   OP_LOADB     = 0x06,
   OP_STOREB    = 0x07,
-  OP_LOADIL    = 0x08,
-  OP_LOADIH    = 0x09,
 
   // 0x10-0x1f: arithmetic
   OP_ADD       = 0x10,
@@ -107,6 +154,73 @@ typedef enum {
   OP_DUMP_REG  = 0xf3, // trigger a dump of specified register in emulator
   OP_DUMP_REGS = 0xf4, // trigger a dump of all registers in emulator
 } opcode;
+
+static inline instruction_type opcode_instruction_type(opcode op) {
+  switch (op) {
+    case OP_HALT:
+    case OP_RET:
+    case OP_NOP:
+    case OP_DUMP_REGS:
+      return INSN_TYPE_0REG;
+
+    case OP_JMPR:
+    case OP_CALLR:
+    case OP_PUSH:
+    case OP_POP:
+    case OP_DUMP_REG:
+      return INSN_TYPE_1REG;
+
+    case OP_MOV:
+    case OP_NOT:
+    case OP_CMP:
+      return INSN_TYPE_2REG;
+
+    case OP_ADD:
+    case OP_SUB:
+    case OP_MUL:
+    case OP_DIV:
+    case OP_MOD:
+    case OP_AND:
+    case OP_OR:
+    case OP_XOR:
+    case OP_SHL:
+    case OP_SHR:
+      return INSN_TYPE_3REG;
+
+    case OP_JMP:
+    case OP_JE:
+    case OP_JNE:
+    case OP_JL:
+    case OP_JLE:
+    case OP_JG:
+    case OP_JGE:
+    case OP_CALL:
+      return INSN_TYPE_0REG_IMM;
+
+    case OP_LOADI:
+    case OP_CMPI:
+      return INSN_TYPE_1REG_IMM;
+
+    case OP_LOAD:
+    case OP_STORE:
+    case OP_LEA:
+    case OP_LOADB:
+    case OP_STOREB:
+    case OP_ADDI:
+    case OP_SUBI:
+    case OP_MULI:
+    case OP_DIVI:
+    case OP_MODI:
+    case OP_ANDI:
+    case OP_ORI:
+    case OP_XORI:
+    case OP_SHLI:
+    case OP_SHRI:
+      return INSN_TYPE_2REG_IMM;
+  }
+
+  assert(false && "invalid opcode");
+}
 
 static inline size_t emu_reserved_register_index(emu_reserved_register_slot slot) {
   return EMU_GENERAL_REGISTER_COUNT + (size_t)slot;

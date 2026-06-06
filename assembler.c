@@ -214,7 +214,7 @@ static void label_list_add(label_list* labels, const char* name, usz length, u32
   labels->count++;
 }
 
-static bool find_label(const label_list* labels, const char* name, u32* address) {
+static bool find_label(const label_list* labels, const char* name, u64* address) {
   for (usz i = 0; i < labels->count; i++) {
     if (strcmp(labels->items[i].name, name) == 0) {
       *address = labels->items[i].address;
@@ -224,25 +224,25 @@ static bool find_label(const label_list* labels, const char* name, u32* address)
   return false;
 }
 
-static bool parse_u32_value(const char* token, u32* value) {
+static bool parse_u64_value(const char* token, u64* value) {
   errno = 0;
 
   char* end = NULL;
-  unsigned long parsed = strtoul(token, &end, 0);
+  unsigned long long parsed = strtoull(token, &end, 0);
 
   if (token[0] == '\0' || end == token || *end != '\0') {
     return false;
   }
 
-  if (errno == ERANGE || parsed > UINT32_MAX) {
+  if (errno == ERANGE) {
     return false;
   }
 
-  *value = (u32)parsed;
+  *value = (u64)parsed;
   return true;
 }
 
-static bool parse_u32_hex_value(const char* token, u32* value) {
+static bool parse_u64_hex_value(const char* token, u64* value) {
   if (token[0] != '0' || tolower((unsigned char)token[1]) != 'x') {
     return false;
   }
@@ -250,17 +250,17 @@ static bool parse_u32_hex_value(const char* token, u32* value) {
   errno = 0;
 
   char* end = NULL;
-  unsigned long parsed = strtoul(token + 2, &end, 16);
+  unsigned long long parsed = strtoull(token + 2, &end, 16);
 
   if (end == token + 2 || *end != '\0') {
     return false;
   }
 
-  if (errno == ERANGE || parsed > UINT32_MAX) {
+  if (errno == ERANGE) {
     return false;
   }
 
-  *value = (u32)parsed;
+  *value = (u64)parsed;
   return true;
 }
 
@@ -298,14 +298,14 @@ static bool parse_register(const char* token, u8* value) {
   return false;
 }
 
-static bool parse_imm_or_label(const char* token, const label_list* labels, u32* value) {
+static bool parse_imm_or_label(const char* token, const label_list* labels, u64* value) {
   if (token[0] == '\'') {
     unsigned char ch;
     size_t len = strlen(token);
 
     if (len == 3 && token[2] == '\'') {
       ch = (unsigned char)token[1];
-      *value = (u32)ch;
+      *value = (u64)ch;
       return true;
     }
 
@@ -320,24 +320,24 @@ static bool parse_imm_or_label(const char* token, const label_list* labels, u32*
         default: return false;
       }
 
-      *value = (u32)ch;
+      *value = (u64)ch;
       return true;
     }
 
     return false;
   }
 
-  u32 parsed = 0;
+  u64 parsed = 0;
 
   if (token[0] == '0' && tolower((unsigned char)token[1]) == 'x') {
-    if (!parse_u32_hex_value(token, &parsed)) {
+    if (!parse_u64_hex_value(token, &parsed)) {
       return false;
     }
     *value = parsed;
     return true;
   }
 
-  if (parse_u32_value(token, &parsed)) {
+  if (parse_u64_value(token, &parsed)) {
     if (parsed > UINT32_MAX) {
       return false;
     }
@@ -346,7 +346,7 @@ static bool parse_imm_or_label(const char* token, const label_list* labels, u32*
     return true;
   }
 
-  u32 address = 0;
+  u64 address = 0;
   if (find_label(labels, token, &address)) {
     *value = address;
     return true;
@@ -367,8 +367,6 @@ static bool opcode_from_mnemonic(const char* token, opcode* value) {
   if (equals_ignore_case(token, "lea"))       { *value = OP_LEA; return true; }
   if (equals_ignore_case(token, "loadb"))     { *value = OP_LOADB; return true; }
   if (equals_ignore_case(token, "storeb"))    { *value = OP_STOREB; return true; }
-  if (equals_ignore_case(token, "loadil"))    { *value = OP_LOADIL; return true; }
-  if (equals_ignore_case(token, "loadih"))    { *value = OP_LOADIH; return true; }
 
   // arithmetic
 
@@ -436,6 +434,18 @@ static bool opcode_from_mnemonic(const char* token, opcode* value) {
   return false;
 }
 
+static bool opcode_from_line(const char* line, opcode* value) {
+  char* copy = strdup(line);
+  if (!copy) {
+    die("out of memory");
+  }
+  char* cursor = copy;
+  char* mnemonic = next_token(&cursor);
+  bool result = mnemonic && opcode_from_mnemonic(mnemonic, value);
+  free(copy);
+  return result;
+}
+
 static char* find_label_candidate(char* text) {
   char* cursor = text;
 
@@ -456,7 +466,7 @@ static char* find_label_candidate(char* text) {
   return NULL;
 }
 
-static char* consume_labels(char* line, label_list* labels, u32 address, source_location loc) {
+static char* consume_labels(char* line, label_list* labels, u64 address, source_location loc) {
   char* cursor = normalize_line(line);
 
   while (*cursor) {
@@ -502,23 +512,22 @@ static void expect_no_extra(char* cursor, source_location loc) {
   }
 }
 
-static void assemble_line(
+static usz assemble_line(
   char* line,
-  const label_list* labels,
+  label_list* labels,
   u8* output,
-  usz index,
   source_location loc
 ) {
   char* cursor = normalize_line(line);
 
   if (*cursor == '\0') {
-    return;
+    return 0;
   }
 
   char* mnemonic = next_token(&cursor);
 
   if (!mnemonic) {
-    return;
+    return 0;
   }
 
   opcode op = 0;
@@ -531,15 +540,16 @@ static void assemble_line(
   u8 a = 0;
   u8 b = 0;
   u8 c = 0;
-  u32 imm = 0;
+  u64 imm = 0;
   char* token = NULL;
 
   switch (op) {
-    case OP_HALT:
+    case OP_HALT: {
       expect_no_extra(cursor, loc);
       break;
+    }
 
-    case OP_LOADI:
+    case OP_LOADI: {
       token = next_token(&cursor);
       if (!token || !parse_register(token, &a)) {
         error_at(loc, "expected destination register");
@@ -550,32 +560,9 @@ static void assemble_line(
       }
       expect_no_extra(cursor, loc);
       break;
+    }
 
-    case OP_LOADIL:
-      token = next_token(&cursor);
-      if (!token || !parse_register(token, &a)) {
-        error_at(loc, "expected destination register");
-      }
-      token = next_token(&cursor);
-      if (!token || !parse_imm_or_label(token, labels, &imm)) {
-        error_at(loc, "expected immediate or label");
-      }
-      expect_no_extra(cursor, loc);
-      break;
-
-    case OP_LOADIH:
-      token = next_token(&cursor);
-      if (!token || !parse_register(token, &a)) {
-        error_at(loc, "expected destination register");
-      }
-      token = next_token(&cursor);
-      if (!token || !parse_imm_or_label(token, labels, &imm)) {
-        error_at(loc, "expected immediate or label");
-      }
-      expect_no_extra(cursor, loc);
-      break;
-
-    case OP_MOV:
+    case OP_MOV: {
       token = next_token(&cursor);
       if (!token || !parse_register(token, &a)) {
         error_at(loc, "expected destination register");
@@ -586,12 +573,13 @@ static void assemble_line(
       }
       expect_no_extra(cursor, loc);
       break;
+    }
 
     case OP_LOAD:
     case OP_STORE:
     case OP_LOADB:
     case OP_STOREB:
-    case OP_LEA:
+    case OP_LEA: {
       token = next_token(&cursor);
       if (!token || !parse_register(token, &a)) {
         error_at(loc, "expected register operand");
@@ -609,6 +597,7 @@ static void assemble_line(
 
       expect_no_extra(cursor, loc);
       break;
+    }
 
     case OP_ADD:
     case OP_SUB:
@@ -617,7 +606,7 @@ static void assemble_line(
     case OP_MOD:
     case OP_AND:
     case OP_OR:
-    case OP_XOR:
+    case OP_XOR: {
       token = next_token(&cursor);
       if (!token || !parse_register(token, &a)) {
         error_at(loc, "expected destination register");
@@ -635,6 +624,7 @@ static void assemble_line(
 
       expect_no_extra(cursor, loc);
       break;
+    }
 
     case OP_ADDI:
     case OP_SUBI:
@@ -643,7 +633,7 @@ static void assemble_line(
     case OP_MODI:
     case OP_ANDI:
     case OP_ORI:
-    case OP_XORI:
+    case OP_XORI: {
       token = next_token(&cursor);
       if (!token || !parse_register(token, &a)) {
         error_at(loc, "expected destination register");
@@ -661,8 +651,9 @@ static void assemble_line(
 
       expect_no_extra(cursor, loc);
       break;
+    }
 
-    case OP_NOT:
+    case OP_NOT: {
       token = next_token(&cursor);
       if (!token || !parse_register(token, &a)) {
         error_at(loc, "expected destination register");
@@ -675,9 +666,10 @@ static void assemble_line(
 
       expect_no_extra(cursor, loc);
       break;
+    }
 
     case OP_SHL:
-    case OP_SHR:
+    case OP_SHR: {
       token = next_token(&cursor);
       if (!token || !parse_register(token, &a)) {
         error_at(loc, "expected destination register");
@@ -695,9 +687,10 @@ static void assemble_line(
 
       expect_no_extra(cursor, loc);
       break;
+    }
 
     case OP_SHLI:
-    case OP_SHRI:
+    case OP_SHRI: {
       token = next_token(&cursor);
       if (!token || !parse_register(token, &a)) {
         error_at(loc, "expected destination register");
@@ -715,8 +708,9 @@ static void assemble_line(
 
       expect_no_extra(cursor, loc);
       break;
+    }
 
-    case OP_CMP:
+    case OP_CMP: {
       token = next_token(&cursor);
       if (!token || !parse_register(token, &a)) {
         error_at(loc, "expected first compare register");
@@ -729,8 +723,9 @@ static void assemble_line(
 
       expect_no_extra(cursor, loc);
       break;
+    }
 
-    case OP_CMPI:
+    case OP_CMPI: {
       token = next_token(&cursor);
       if (!token || !parse_register(token, &a)) {
         error_at(loc, "expected compare register");
@@ -743,6 +738,7 @@ static void assemble_line(
 
       expect_no_extra(cursor, loc);
       break;
+    }
 
     case OP_JMP:
     case OP_JE:
@@ -750,7 +746,7 @@ static void assemble_line(
     case OP_JL:
     case OP_JLE:
     case OP_JG:
-    case OP_JGE:
+    case OP_JGE: {
       token = next_token(&cursor);
       if (!token || !parse_imm_or_label(token, labels, &imm)) {
         error_at(loc, "expected jump target");
@@ -758,8 +754,9 @@ static void assemble_line(
 
       expect_no_extra(cursor, loc);
       break;
+    }
 
-    case OP_JMPR:
+    case OP_JMPR: {
       token = next_token(&cursor);
       if (!token || !parse_register(token, &a)) {
         error_at(loc, "expected jump target register");
@@ -767,9 +764,9 @@ static void assemble_line(
 
       expect_no_extra(cursor, loc);
       break;
+    }
 
-
-    case OP_CALL:
+    case OP_CALL: {
       token = next_token(&cursor);
       if (!token || !parse_imm_or_label(token, labels, &imm)) {
         error_at(loc, "expected call target");
@@ -777,8 +774,9 @@ static void assemble_line(
 
       expect_no_extra(cursor, loc);
       break;
+    }
 
-    case OP_CALLR:
+    case OP_CALLR: {
       token = next_token(&cursor);
       if (!token || !parse_register(token, &a)) {
         error_at(loc, "expected call target register");
@@ -786,14 +784,15 @@ static void assemble_line(
 
       expect_no_extra(cursor, loc);
       break;
+    }
 
-    case OP_RET:
+    case OP_RET: {
       expect_no_extra(cursor, loc);
       break;
-
+    }
 
     case OP_PUSH:
-    case OP_POP:
+    case OP_POP: {
       token = next_token(&cursor);
       if (!token || !parse_register(token, &a)) {
         error_at(loc, "expected register operand");
@@ -801,12 +800,14 @@ static void assemble_line(
 
       expect_no_extra(cursor, loc);
       break;
+    }
 
-    case OP_NOP:
+    case OP_NOP: {
       expect_no_extra(cursor, loc);
       break;
+    }
 
-    case OP_DUMP_REG:
+    case OP_DUMP_REG: {
       token = next_token(&cursor);
       if (!token || !parse_register(token, &a)) {
         error_at(loc, "expected register operand");
@@ -814,19 +815,50 @@ static void assemble_line(
 
       expect_no_extra(cursor, loc);
       break;
+    }
 
-    case OP_DUMP_REGS:
+    case OP_DUMP_REGS: {
       expect_no_extra(cursor, loc);
       break;
+    }
   }
 
-  instruction insn;
-  insn.opcode = (u8)op;
-  insn.a = a;
-  insn.b = b;
-  insn.c = c;
-  insn.imm = imm;
-  memcpy(&output[index * INSN_SIZE], &insn, INSN_SIZE);
+#define output_insn(type, ...) \
+  do { \
+    instruction_##type insn = { (u8)op, __VA_ARGS__ }; \
+    memcpy(output, &insn, sizeof(insn)); \
+    return sizeof(insn); \
+  } while (0);
+
+  switch (opcode_instruction_type(op)) {
+    case INSN_TYPE_0REG:
+      output_insn(0reg);
+      break;
+
+    case INSN_TYPE_1REG: 
+      output_insn(1reg, a);
+      break;
+
+    case INSN_TYPE_2REG:
+      output_insn(2reg, a, b);
+      break;
+
+    case INSN_TYPE_3REG:
+      output_insn(3reg, a, b, c);
+      break;
+
+    case INSN_TYPE_0REG_IMM:
+      output_insn(0reg_imm, imm);
+      break;
+
+    case INSN_TYPE_1REG_IMM:
+      output_insn(1reg_imm, a, imm);
+      break;
+
+    case INSN_TYPE_2REG_IMM:
+      output_insn(2reg_imm, a, b, imm);
+      break;
+  }
 }
 
 static void print_help(const char* program) {
@@ -890,6 +922,15 @@ static buffer preprocess_file(const char* path, char* cpp_args[], int cpp_argc) 
   return result;
 }
 
+static usz assembled_instruction_size(const char* line) {
+  opcode op = 0;
+  if (!opcode_from_line(line, &op)) {
+    return 0;
+  }
+
+  return size_for_instruction_type(opcode_instruction_type(op));
+}
+
 int main(int argc, char** argv) {
   if (argc < 3) {
     print_help(argv[0]);
@@ -936,7 +977,7 @@ int main(int argc, char** argv) {
   memcpy(second_pass_source, source.data, source.size + 1);
 
   label_list labels = {0};
-  usz instruction_count = 0;
+  usz output_size = 0;
 
   source_location loc = {
     .file = input_path,
@@ -965,17 +1006,16 @@ int main(int argc, char** argv) {
       continue;
     }
 
-    char* cursor = consume_labels(
-      line,
-      &labels,
-      (u32)(instruction_count * INSN_SIZE),
-      loc
-    );
+    char* cursor = consume_labels(line, &labels, (u64)output_size, loc);
 
     cursor = normalize_line(cursor);
 
     if (*cursor != '\0') {
-      instruction_count++;
+      usz s = assembled_instruction_size(cursor);
+      if (s == 0) {
+        error_at(loc, "unknown instruction");
+      }
+      output_size += s;
     }
 
     loc.line++;
@@ -984,8 +1024,8 @@ int main(int argc, char** argv) {
   loc.file = input_path;
   loc.line = 1;
 
-  u8* output = calloc(instruction_count, INSN_SIZE);
-  if (!output && instruction_count != 0) {
+  u8* output = malloc(output_size);
+  if (!output && output_size > 0) {
     die("out of memory");
   }
 
@@ -993,7 +1033,7 @@ int main(int argc, char** argv) {
   loc.line = 1;
 
   char* second_pass = second_pass_source;
-  usz instruction_index = 0;
+  usz output_offset = 0;
 
   while (second_pass) {
     char* line = second_pass;
@@ -1016,15 +1056,9 @@ int main(int argc, char** argv) {
     char* cursor = skip_labels(line);
 
     if (*cursor != '\0') {
-      assemble_line(
-        cursor,
-        &labels,
-        output,
-        instruction_index,
-        loc
-      );
+      usz written = assemble_line(cursor, &labels, output + output_offset, loc);
 
-      instruction_index++;
+      output_offset += written;
     }
 
     loc.line++;
@@ -1037,9 +1071,9 @@ int main(int argc, char** argv) {
       dief("could not open output file '%s'", output_path);
     }
   }
-  if (instruction_count > 0) {
-    size_t written = fwrite(output, INSN_SIZE, instruction_count, out);
-    if (written != instruction_count) {
+  if (output_size > 0) {
+    size_t written = fwrite(output, 1, output_size, out);
+    if (written != output_size) {
       if (out != stdout) {
         fclose(out);
       }

@@ -55,10 +55,6 @@ typedef enum {
   DEVICE_STDIO = 1,
 } device_type;
 
-static u32 read_u32_le(const u8* bytes) {
-  return (u32)bytes[0] | ((u32)bytes[1] << 8) | ((u32)bytes[2] << 16) | ((u32)bytes[3] << 24);
-}
-
 static u64 read_u64_le(const u8* bytes) {
   return (u64)bytes[0]
     | ((u64)bytes[1] << 8)
@@ -426,18 +422,13 @@ static bool write_u8_memory(
   }
 }
 
-static instruction decode_instruction(const u8* bytes) {
-  instruction insn;
-  insn.opcode = bytes[0];
-  insn.a = bytes[1];
-  insn.b = bytes[2];
-  insn.c = bytes[3];
-  insn.imm = read_u32_le(&bytes[4]);
-  return insn;
+static inline opcode read_opcode(const u8* bytes) {
+  return (opcode)bytes[0];
 }
 
-static bool jump_target_is_valid(u64 target, u64 memory_size) {
-  return target < memory_size && (target % INSN_SIZE) == 0;
+static inline instruction_type decode_instruction_type(const u8* bytes) {
+  opcode op = (opcode)bytes[0];
+  return opcode_instruction_type(op);
 }
 
 static bool jump_condition_is_met(u64 flags, opcode op) {
@@ -507,7 +498,7 @@ static void dump_register(const u64* registers, size_t index) {
   }
 }
 
-static void dump_registers(const u64* registers, instruction* insn) {
+static void dump_registers(const u64* registers) {
   fprintf(stderr, "==== REGISTER DUMP ====\n");
 
   for (usz i = 0; i < EMU_GENERAL_REGISTER_COUNT; i++) {
@@ -532,24 +523,12 @@ static void dump_registers(const u64* registers, instruction* insn) {
   fprintf(stderr, "machine_info = 0x%016llx\n",
     (unsigned long long)registers[emu_reserved_register_index(EMU_REG_SLOT_MACHINE_INFO)]
   );
-
-  if (insn) {
-    fprintf(stderr, "=== INSTRUCTION DUMP ===\n");
-
-    fprintf(stderr, "op=0x%02x a=%u b=%u c=%u imm=%u\n",
-      insn->opcode,
-      insn->a,
-      insn->b,
-      insn->c,
-      insn->imm
-    );
-  }
 }
 
 #define RUNTIME_ERROR(error)                       \
   do {                                             \
     fprintf(stderr, "Runtime error: " error "\n"); \
-    dump_registers(registers, &insn);              \
+    dump_registers(registers);                     \
     goto done;                                     \
   } while (0)
 
@@ -559,7 +538,6 @@ int main(int argc, char** argv) {
   const usz device_info_rom_size = KiB(32);
   usz ram_size = MiB(512);
   const usz mmio_size = MiB(32);
-  static_assert(firmware_rom_size % INSN_SIZE == 0, "firmware ROM size must be a multiple of instruction size");
   static_assert(machine_info_rom_size % 8 == 0, "machine info ROM size must be a multiple of 8 bytes");
   static_assert(mmio_size % 8 == 0, "MMIO size must be a multiple of 8 bytes");
   const char* binary_path = NULL;
@@ -670,11 +648,6 @@ int main(int argc, char** argv) {
     goto done;
   }
 
-  if (binary_size % INSN_SIZE != 0) {
-    fprintf(stderr, "Error: Binary size (%zu bytes) is not a multiple of instruction size (%d bytes)\n", binary_size, INSN_SIZE);
-    goto done;
-  }
-
   if (fseek(binary_file, 0, SEEK_SET) != 0) {
     fprintf(stderr, "Error: Could not rewind binary file '%s'\n", binary_path);
     goto done;
@@ -693,77 +666,71 @@ int main(int argc, char** argv) {
   while (true) {
     u64 pc = registers[pc_idx];
 
-    instruction insn = decode_instruction(&firmware_rom[pc]);
-    opcode op = (opcode)insn.opcode;
-    u64 next_pc = pc + INSN_SIZE;
+    instruction_type insn_type = decode_instruction_type(&firmware_rom[pc]);
+    opcode op = read_opcode(&firmware_rom[pc]);
+    u64 next_pc = pc + size_for_instruction_type(insn_type);
     bool pc_written = false;
+
+#define get_insn(type) \
+  instruction_##type insn = *(instruction_##type*)(&firmware_rom[pc])
 
     switch (op) {
       case OP_HALT:
         exit_code = 0;
         goto done;
 
-      case OP_LOADI:
+      case OP_LOADI: {
+        get_insn(1reg_imm);
         if (insn.a >= register_count) {
           RUNTIME_ERROR("invalid destination register");
         }
         registers[insn.a] = (u64)(u32)insn.imm;
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
-      case OP_LOADIL:
-        if (insn.a >= register_count) {
-          RUNTIME_ERROR("invalid destination register");
-        }
-        registers[insn.a] =
-          (registers[insn.a] & 0xFFFFFFFF00000000ULL)
-          | (u64)(u32)insn.imm;
-        pc_written = (insn.a == pc_idx);
-        break;
-
-      case OP_LOADIH:
-        if (insn.a >= register_count) {
-          RUNTIME_ERROR("invalid destination register");
-        }
-        registers[insn.a] =
-          (registers[insn.a] & 0x00000000FFFFFFFFULL)
-          | ((u64)(u32)insn.imm << 32);
-        pc_written = (insn.a == pc_idx);
-        break;
-
-      case OP_MOV:
+      case OP_MOV: {
+        get_insn(2reg);
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b];
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
-      case OP_ADD:
+      case OP_ADD: {
+        get_insn(3reg);
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] + registers[insn.c];
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
-      case OP_SUB:
+      case OP_SUB: {
+        get_insn(3reg);
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] - registers[insn.c];
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
-      case OP_MUL:
+      case OP_MUL: {
+        get_insn(3reg);
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] * registers[insn.c];
         pc_written = (insn.a == pc_idx);
         break;
+      }
       
-      case OP_DIV:
+      case OP_DIV: {
+        get_insn(3reg);
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
@@ -773,32 +740,40 @@ int main(int argc, char** argv) {
         registers[insn.a] = registers[insn.b] / registers[insn.c];
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
-      case OP_ADDI:
+      case OP_ADDI: {
+        get_insn(2reg_imm);
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] + (u64)(i32)insn.imm;
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
-      case OP_SUBI:
+      case OP_SUBI: {
+        get_insn(2reg_imm);
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] - (u64)(i32)insn.imm;
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
-      case OP_MULI:
+      case OP_MULI: {
+        get_insn(2reg_imm);
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] * (u64)(i32)insn.imm;
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
-      case OP_DIVI:
+      case OP_DIVI: {
+        get_insn(2reg_imm);
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
@@ -808,19 +783,23 @@ int main(int argc, char** argv) {
         registers[insn.a] = registers[insn.b] / (u64)(i32)insn.imm;
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
-      case OP_MOD:
+      case OP_MOD: {
+        get_insn(3reg);
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
         if (registers[insn.c] == 0) {
           RUNTIME_ERROR("division by zero");
         }
-        registers[insn.a] = registers[insn.b] % (u64)(i32)insn.imm;
+        registers[insn.a] = registers[insn.b] % registers[insn.c];
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
-      case OP_MODI:
+      case OP_MODI: {
+        get_insn(2reg_imm);
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
@@ -830,104 +809,130 @@ int main(int argc, char** argv) {
         registers[insn.a] = registers[insn.b] % (u64)(i32)insn.imm;
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
-      case OP_AND:
+      case OP_AND: {
+        get_insn(3reg);
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] & registers[insn.c];
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
-      case OP_OR:
+      case OP_OR: {
+        get_insn(3reg);
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] | registers[insn.c];
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
-      case OP_XOR:
+      case OP_XOR: {
+        get_insn(3reg);
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] ^ registers[insn.c];
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
-      case OP_NOT:
+      case OP_NOT: {
+        get_insn(2reg);
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = ~registers[insn.b];
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
-      case OP_ANDI:
+      case OP_ANDI: {
+        get_insn(2reg_imm);
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] & (u64)(i32)insn.imm;
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
-      case OP_ORI:
+      case OP_ORI: {
+        get_insn(2reg_imm);
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] | (u64)(i32)insn.imm;
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
-      case OP_XORI:
+      case OP_XORI: {
+        get_insn(2reg_imm);
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] ^ (u64)(i32)insn.imm;
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
-      case OP_LEA:
+      case OP_LEA: {
+        get_insn(2reg_imm);
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] + (i64)(i32)insn.imm;
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
-      case OP_SHL:
+      case OP_SHL: {
+        get_insn(3reg);
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] << (registers[insn.c] & 63u);
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
-      case OP_SHR:
+      case OP_SHR: {
+        get_insn(3reg);
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] >> (registers[insn.c] & 63u);
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
-      case OP_SHLI:
+      case OP_SHLI: {
+        get_insn(2reg_imm);
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] << ((u64)(i32)insn.imm & 63u);
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
-      case OP_SHRI:
+      case OP_SHRI: {
+        get_insn(2reg_imm);
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] >> ((u64)(i32)insn.imm & 63u);
         pc_written = (insn.a == pc_idx);
         break;
+      }
 
       case OP_LOAD: {
+        get_insn(2reg_imm);
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
@@ -953,6 +958,7 @@ int main(int argc, char** argv) {
       }
 
       case OP_STORE: {
+        get_insn(2reg_imm);
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
@@ -977,6 +983,7 @@ int main(int argc, char** argv) {
       }
 
       case OP_LOADB: {
+        get_insn(2reg_imm);
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
@@ -1006,6 +1013,7 @@ int main(int argc, char** argv) {
       }
 
       case OP_STOREB: {
+        get_insn(2reg_imm);
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
@@ -1031,24 +1039,23 @@ int main(int argc, char** argv) {
         break;
       }
 
-      case OP_JMP:
-        if (!jump_target_is_valid((u64)insn.imm, ram_size)) {
-          RUNTIME_ERROR("invalid jump target");
-        }
+      case OP_JMP: {
+        get_insn(0reg_imm);
         registers[pc_idx] = (u64)insn.imm;
         continue;
+      }
 
-      case OP_JMPR:
+      case OP_JMPR: {
+        get_insn(1reg);
         if (insn.a >= register_count) {
           RUNTIME_ERROR("invalid jump target register");
         }
-        if (!jump_target_is_valid(registers[insn.a], ram_size)) {
-          RUNTIME_ERROR("invalid jump target");
-        }
         registers[pc_idx] = registers[insn.a];
         continue;
+      }
 
       case OP_CMP: {
+        get_insn(2reg);
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
@@ -1067,6 +1074,7 @@ int main(int argc, char** argv) {
       }
 
       case OP_CMPI: {
+        get_insn(1reg_imm);
         if (insn.a >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
@@ -1089,17 +1097,17 @@ int main(int argc, char** argv) {
       case OP_JL:
       case OP_JLE:
       case OP_JG:
-      case OP_JGE:
+      case OP_JGE: {
+        get_insn(0reg_imm);
         if (jump_condition_is_met(registers[flags_idx], op)) {
-          if (!jump_target_is_valid((u64)insn.imm, ram_size)) {
-            RUNTIME_ERROR("invalid jump target");
-          }
           registers[pc_idx] = (u64)insn.imm;
           continue;
         }
         break;
+      }
 
       case OP_PUSH: {
+        get_insn(1reg);
         if (insn.a >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
@@ -1126,6 +1134,7 @@ int main(int argc, char** argv) {
       }
 
       case OP_POP: {
+        get_insn(1reg);
         if (insn.a >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
@@ -1152,10 +1161,7 @@ int main(int argc, char** argv) {
       }
 
       case OP_CALL: {
-        if (!jump_target_is_valid((u64)insn.imm, ram_size)) {
-          RUNTIME_ERROR("invalid call target");
-        }
-
+        get_insn(0reg_imm);
         if (registers[sp_idx] < ram_start + sizeof(u64) ||
             registers[sp_idx] > ram_end) {
           RUNTIME_ERROR("stack overflow");
@@ -1184,12 +1190,9 @@ int main(int argc, char** argv) {
       }
       
       case OP_CALLR: {
+        get_insn(1reg);
         if (insn.a >= register_count) {
           RUNTIME_ERROR("invalid target register");
-        }
-
-        if (!jump_target_is_valid(registers[insn.a], ram_size)) {
-          RUNTIME_ERROR("invalid call target");
         }
 
         if (registers[sp_idx] < ram_start + sizeof(u64) ||
@@ -1244,10 +1247,6 @@ int main(int argc, char** argv) {
 
         registers[sp_idx] += sizeof(u64);
 
-        if (!jump_target_is_valid(return_address, ram_size)) {
-          RUNTIME_ERROR("invalid return address");
-        }
-
         registers[pc_idx] = return_address;
         continue;
       }
@@ -1255,16 +1254,19 @@ int main(int argc, char** argv) {
     case OP_NOP:
       break;
 
-    case OP_DUMP_REG:
+    case OP_DUMP_REG: {
+      get_insn(1reg);
       if (insn.a >= register_count) {
         RUNTIME_ERROR("invalid register operand");
       }
       dump_register(registers, insn.a);
       break;
+    }
 
-    case OP_DUMP_REGS:
-      dump_registers(registers, NULL);
+    case OP_DUMP_REGS: {
+      dump_registers(registers);
       break;
+    }
 
     default:
       RUNTIME_ERROR("invalid opcode");
