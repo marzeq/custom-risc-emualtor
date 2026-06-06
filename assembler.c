@@ -13,7 +13,7 @@
 
 typedef struct {
   char* name;
-  u32 address;
+  u64 address;
 } label;
 
 typedef struct {
@@ -196,7 +196,7 @@ static char* next_token(char** cursor) {
   return start;
 }
 
-static void label_list_add(label_list* labels, const char* name, usz length, u32 address, source_location loc) {
+static void label_list_add(label_list* labels, const char* name, usz length, u64 address, source_location loc) {
   for (usz i = 0; i < labels->count; i++) {
     if (strcmp(labels->items[i].name, name) == 0) {
       error_at(loc, "duplicate label '%.*s'", (int)length, name);
