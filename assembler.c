@@ -49,9 +49,14 @@ static void error_at(source_location loc, const char* format, ...) {
   exit(1);
 }
 
-static void dief(const char* format, const char* detail) {
+static void dief(const char* format, ...) {
   fprintf(stderr, "error: ");
-  fprintf(stderr, format, detail);
+
+  va_list args;
+  va_start(args, format);
+  vfprintf(stderr, format, args);
+  va_end(args);
+
   fputc('\n', stderr);
   exit(1);
 }
@@ -197,12 +202,14 @@ static char* next_token(char** cursor) {
         }
 
         switch (*read) {
-          case 'n': *write++ = '\n'; break;
-          case 'r': *write++ = '\r'; break;
-          case 't': *write++ = '\t'; break;
+          case 'n':  *write++ = '\n'; break;
+          case 'r':  *write++ = '\r'; break;
+          case 't':  *write++ = '\t'; break;
           case '\\': *write++ = '\\'; break;
-          case '"': *write++ = '"'; break;
-          default: *write++ = *read; break;
+          case '"':  *write++ = '"'; break;
+          default: {
+            dief("invalid escape sequence '\\%c'", *read);
+          }
         }
 
         read++;
