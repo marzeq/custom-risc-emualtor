@@ -1,4 +1,4 @@
-  jmp _setup
+.entry _setup
 
 _setup:
   load r0, machine_info, 0

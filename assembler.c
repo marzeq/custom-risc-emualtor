@@ -861,6 +861,34 @@ static usz assemble_line(
   }
 }
 
+usz emit_directive(
+  char* line,
+  u8* output,
+  source_location loc
+) {
+  (void)output;
+  char* cursor = normalize_line(line);
+
+  if (*cursor != '.') {
+    error_at(loc, "directive must start with '.'");
+    exit(1);
+  }
+
+  char* directive = next_token(&cursor);
+
+  if (!directive) {
+    error_at(loc, "expected directive name");
+    exit(1);
+  }
+
+  if (equals_ignore_case(directive, ".entry")) {
+    return 0;
+  }
+
+  error_at(loc, "unknown directive");
+  return 0;
+}
+
 static void print_help(const char* program) {
   printf("Usage: %s source.asm output.bin\n", program);
 }
@@ -931,6 +959,44 @@ static usz assembled_instruction_size(const char* line) {
   return size_for_instruction_type(opcode_instruction_type(op));
 }
 
+static usz directive_size(const char* line, char** entry_point, source_location loc) {
+  char* copy = strdup(line);
+  if (!copy) {
+    die("out of memory");
+  }
+  char* cursor = copy;
+  char* directive = next_token(&cursor);
+
+  if (!directive) {
+    free(copy);
+    error_at(loc, "expected directive name");
+    exit(1);
+  }
+
+  if (equals_ignore_case(directive, ".entry")) {
+    if (*entry_point) {
+      free(copy);
+      error_at(loc, "multiple entry point directives are not allowed");
+      exit(1);
+    }
+
+    char* token = next_token(&cursor);
+    if (!token) {
+      free(copy);
+      error_at(loc, "expected entry point label");
+      exit(1);
+    }
+
+    *entry_point = strdup(token);
+
+    return size_for_instruction_type(opcode_instruction_type(OP_JMP));
+  }
+
+  free(copy);
+  error_at(loc, "unknown directive");
+  return 0;
+}
+
 int main(int argc, char** argv) {
   if (argc < 3) {
     print_help(argv[0]);
@@ -976,6 +1042,7 @@ int main(int argc, char** argv) {
   }
   memcpy(second_pass_source, source.data, source.size + 1);
 
+  char* entry_point = NULL;
   label_list labels = {0};
   usz output_size = 0;
 
@@ -1010,15 +1077,30 @@ int main(int argc, char** argv) {
 
     cursor = normalize_line(cursor);
 
-    if (*cursor != '\0') {
-      usz s = assembled_instruction_size(cursor);
-      if (s == 0) {
-        error_at(loc, "unknown instruction");
-      }
-      output_size += s;
+    if (*cursor == '\0') {
+      loc.line++;
+      continue;
     }
 
+    usz s = 0;
+    if (*cursor == '.') {
+      s = directive_size(cursor, &entry_point, loc);
+    } else {
+      s = assembled_instruction_size(cursor);
+    }
+
+    if (s == 0) {
+      error_at(loc, "unknown instruction");
+    }
+    output_size += s;
+
     loc.line++;
+  }
+
+  // check for entry point existence before second pass to avoid doing unnecessary work if entry point is missing
+  u64 entry_address = 0;
+  if (entry_point && !find_label(&labels, entry_point, &entry_address)) {
+    dief("entry point label '%s' not found", entry_point);
   }
 
   loc.file = input_path;
@@ -1034,6 +1116,10 @@ int main(int argc, char** argv) {
 
   char* second_pass = second_pass_source;
   usz output_offset = 0;
+
+  if (entry_point) {
+    output_offset += size_for_instruction_type(opcode_instruction_type(OP_JMP));
+  }
 
   while (second_pass) {
     char* line = second_pass;
@@ -1055,13 +1141,35 @@ int main(int argc, char** argv) {
 
     char* cursor = skip_labels(line);
 
-    if (*cursor != '\0') {
-      usz written = assemble_line(cursor, &labels, output + output_offset, loc);
-
-      output_offset += written;
+    if (*cursor == '\0') {
+      loc.line++;
+      continue;
     }
 
+    usz written = 0;
+    if (*cursor == '.') {
+      written = emit_directive(cursor, output + output_offset, loc);
+    } else {
+      written = assemble_line(cursor, &labels, output + output_offset, loc);
+    }
+
+    output_offset += written;
+
     loc.line++;
+  }
+
+  if (entry_point) {
+    u64 entry_address = 0;
+    if (!find_label(&labels, entry_point, &entry_address)) {
+      dief("entry point label '%s' not found", entry_point);
+    }
+
+    instruction_0reg_imm entry_insn = {
+      .opcode = OP_JMP,
+      .imm = entry_address,
+    };
+
+    memcpy(output, &entry_insn, sizeof(entry_insn));
   }
 
   FILE* out = stdout;
