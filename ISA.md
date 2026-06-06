@@ -7,40 +7,40 @@ This project uses a custom RISC-style instruction set shared by the emulator and
 Each instruction is encoded as either:
 
 ```c
-typedef struct {
+typedef struct [[gnu::packed]] {
   u8 opcode;
 } instruction_0reg;
 
-typedef struct {
+typedef struct [[gnu::packed]] {
   u8 opcode;
   u8 a;
 } instruction_1reg;
 
-typedef struct {
+typedef struct [[gnu::packed]] {
   u8 opcode;
   u8 a;
   u8 b;
 } instruction_2reg;
 
-typedef struct {
+typedef struct [[gnu::packed]] {
   u8 opcode;
   u8 a;
   u8 b;
   u8 c;
 } instruction_3reg;
 
-typedef struct {
+typedef struct [[gnu::packed]] {
   u8 opcode;
   u64 imm;
 } instruction_0reg_imm;
 
-typedef struct {
+typedef struct [[gnu::packed]] {
   u8 opcode;
   u8 a;
   u64 imm;
 } instruction_1reg_imm;
 
-typedef struct {
+typedef struct [[gnu::packed]] {
   u8 opcode;
   u8 a;
   u8 b;
