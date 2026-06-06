@@ -462,7 +462,7 @@ static void print_help(const char* program) {
 }
 
 static void dump_register(const u64* registers, size_t index) {
-  if (index < EMU_GENERAL_REGISTER_COUNT) {
+  if (index < GENERAL_REGISTER_COUNT) {
     fprintf(stderr, "r%zu = 0x%016llx (%llu)\n",
       index,
       (unsigned long long)registers[index],
@@ -473,13 +473,13 @@ static void dump_register(const u64* registers, size_t index) {
 
   char* reg_name = NULL;
 
-  if (index == emu_reserved_register_index(EMU_REG_SLOT_PC)) {
+  if (index == reserved_register_index(REG_SLOT_PC)) {
     reg_name = "pc";
-  } else if (index == emu_reserved_register_index(EMU_REG_SLOT_SP)) {
+  } else if (index == reserved_register_index(REG_SLOT_SP)) {
     reg_name = "sp";
-  } else if (index == emu_reserved_register_index(EMU_REG_SLOT_FLAGS)) {
+  } else if (index == reserved_register_index(REG_SLOT_FLAGS)) {
     reg_name = "flags";
-  } else if (index == emu_reserved_register_index(EMU_REG_SLOT_MACHINE_INFO)) {
+  } else if (index == reserved_register_index(REG_SLOT_MACHINE_INFO)) {
     reg_name = "machine_info";
   } else {
     fprintf(stderr, "r%zu = 0x%016llx (%llu)\n",
@@ -501,7 +501,7 @@ static void dump_register(const u64* registers, size_t index) {
 static void dump_registers(const u64* registers) {
   fprintf(stderr, "==== REGISTER DUMP ====\n");
 
-  for (usz i = 0; i < EMU_GENERAL_REGISTER_COUNT; i++) {
+  for (usz i = 0; i < GENERAL_REGISTER_COUNT; i++) {
     fprintf(stderr, "r%-2zu = 0x%016llx (%llu)\n",
       i,
       (unsigned long long)registers[i],
@@ -512,16 +512,16 @@ static void dump_registers(const u64* registers) {
   fprintf(stderr, "----------------------------\n");
 
   fprintf(stderr, "pc           = 0x%016llx\n",
-    (unsigned long long)registers[emu_reserved_register_index(EMU_REG_SLOT_PC)]
+    (unsigned long long)registers[reserved_register_index(REG_SLOT_PC)]
   );
   fprintf(stderr, "sp           = 0x%016llx\n",
-    (unsigned long long)registers[emu_reserved_register_index(EMU_REG_SLOT_SP)]
+    (unsigned long long)registers[reserved_register_index(REG_SLOT_SP)]
   );
   fprintf(stderr, "flags        = 0x%016llx\n",
-    (unsigned long long)registers[emu_reserved_register_index(EMU_REG_SLOT_FLAGS)]
+    (unsigned long long)registers[reserved_register_index(REG_SLOT_FLAGS)]
   );
   fprintf(stderr, "machine_info = 0x%016llx\n",
-    (unsigned long long)registers[emu_reserved_register_index(EMU_REG_SLOT_MACHINE_INFO)]
+    (unsigned long long)registers[reserved_register_index(REG_SLOT_MACHINE_INFO)]
   );
 }
 
@@ -557,7 +557,7 @@ int main(int argc, char** argv) {
   if (argc > 2) {
     ram_size = MiB(strtoull(argv[2], NULL, 10));
   }
-  const usz register_count = EMU_GENERAL_REGISTER_COUNT + EMU_RESERVED_REGISTER_COUNT;
+  const usz register_count = GENERAL_REGISTER_COUNT + RESERVED_REGISTER_COUNT;
 
   machine_info machine_info = {
     .version = 0,
@@ -610,10 +610,10 @@ int main(int argc, char** argv) {
   }
   memset(registers, 0, register_count * sizeof(u64));
 
-  const usz pc_idx = emu_reserved_register_index(EMU_REG_SLOT_PC);
-  const usz sp_idx = emu_reserved_register_index(EMU_REG_SLOT_SP);
-  const usz flags_idx = emu_reserved_register_index(EMU_REG_SLOT_FLAGS);
-  const usz machine_info_idx = emu_reserved_register_index(EMU_REG_SLOT_MACHINE_INFO);
+  const usz pc_idx = reserved_register_index(REG_SLOT_PC);
+  const usz sp_idx = reserved_register_index(REG_SLOT_SP);
+  const usz flags_idx = reserved_register_index(REG_SLOT_FLAGS);
+  const usz machine_info_idx = reserved_register_index(REG_SLOT_MACHINE_INFO);
 
   registers[machine_info_idx] = firmware_rom_size;
   registers[pc_idx] = 0;

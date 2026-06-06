@@ -1,5 +1,5 @@
-#ifndef EMU_ISA_H
-#define EMU_ISA_H
+#ifndef ISA_H
+#define ISA_H
 
 #include <assert.h>
 #include <stddef.h>
@@ -76,15 +76,15 @@ static inline usz size_for_instruction_type(instruction_type type) {
   }
 }
 
-#define EMU_GENERAL_REGISTER_COUNT 16
+#define GENERAL_REGISTER_COUNT 16
 
 typedef enum {
-  EMU_REG_SLOT_PC = 0,
-  EMU_REG_SLOT_SP = 1,
-  EMU_REG_SLOT_FLAGS = 2,
-  EMU_REG_SLOT_MACHINE_INFO = 3,
-  EMU_RESERVED_REGISTER_COUNT = 4,
-} emu_reserved_register_slot;
+  REG_SLOT_PC = 0,
+  REG_SLOT_SP = 1,
+  REG_SLOT_FLAGS = 2,
+  REG_SLOT_MACHINE_INFO = 3,
+  RESERVED_REGISTER_COUNT = 4,
+} reserved_register_slot;
 
 typedef enum {
   // 0x00-0x0f: data movement
@@ -222,8 +222,8 @@ static inline instruction_type opcode_instruction_type(opcode op) {
   assert(false && "invalid opcode");
 }
 
-static inline size_t emu_reserved_register_index(emu_reserved_register_slot slot) {
-  return EMU_GENERAL_REGISTER_COUNT + (size_t)slot;
+static inline size_t reserved_register_index(reserved_register_slot slot) {
+  return GENERAL_REGISTER_COUNT + (size_t)slot;
 }
 
 #endif
