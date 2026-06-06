@@ -184,6 +184,45 @@ static char* next_token(char** cursor) {
     return start;
   }
 
+  if (*text == '"') {
+    char* read = text + 1;
+    char* write = text + 1;
+
+    while (*read) {
+      if (*read == '\\') {
+        read++;
+
+        if (*read == '\0') {
+          break;
+        }
+
+        switch (*read) {
+          case 'n': *write++ = '\n'; break;
+          case 'r': *write++ = '\r'; break;
+          case 't': *write++ = '\t'; break;
+          case '\\': *write++ = '\\'; break;
+          case '"': *write++ = '"'; break;
+          default: *write++ = *read; break;
+        }
+
+        read++;
+      } else if (*read == '"') {
+        break;
+      } else {
+        *write++ = *read++;
+      }
+    }
+
+    *write = '\0';
+
+    if (*read == '"') {
+      read++;
+    }
+
+    *cursor = read;
+    return text + 1;
+  }
+
   while (*text && !isspace((unsigned char)*text) && *text != ',') {
     text++;
   }
@@ -916,6 +955,16 @@ usz emit_directive(
     memcpy(output, &value, sizeof(value));
 
     return 8;
+  } else if (equals_ignore_case(directive, ".ascii")) {
+    char* token = next_token(&cursor);
+    if (!token || token[-1] != '"') {
+      error_at(loc, "expected string literal");
+      exit(1);
+    }
+
+    size_t length = strlen(token); // exclude null terminator
+    memmove(output, token, length);
+    return length;
   }
 
   error_at(loc, "unknown directive");
@@ -1028,6 +1077,15 @@ static usz directive_size(const char* line, char** entry_point, bool* shift_labe
     return 1;
   } else if (equals_ignore_case(directive, ".quad")) {
     return 8;
+  } else if (equals_ignore_case(directive, ".ascii")) {
+    char* token = next_token(&cursor);
+    if (!token || token[-1] != '"') {
+      free(copy);
+      error_at(loc, "expected string literal");
+      exit(1);
+    }
+
+    return strlen(token); // exclude null terminator
   }
 
   free(copy);
