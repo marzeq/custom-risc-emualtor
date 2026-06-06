@@ -271,7 +271,7 @@ static bool parse_register(const char* token, u8* value) {
     if (end == token + 1 || *end != '\0') {
       return false;
     }
-    if (parsed >= GENERAL_REGISTER_COUNT) {
+    if (parsed >= EMU_GENERAL_REGISTER_COUNT) {
       return false;
     }
     *value = (u8)parsed;
@@ -279,19 +279,19 @@ static bool parse_register(const char* token, u8* value) {
   }
 
   if (equals_ignore_case(token, "pc")) {
-    *value = (u8)reserved_register_index(REG_SLOT_PC);
+    *value = (u8)emu_reserved_register_index(EMU_REG_SLOT_PC);
     return true;
   }
   if (equals_ignore_case(token, "sp")) {
-    *value = (u8)reserved_register_index(REG_SLOT_SP);
+    *value = (u8)emu_reserved_register_index(EMU_REG_SLOT_SP);
     return true;
   }
   if (equals_ignore_case(token, "flags")) {
-    *value = (u8)reserved_register_index(REG_SLOT_FLAGS);
+    *value = (u8)emu_reserved_register_index(EMU_REG_SLOT_FLAGS);
     return true;
   }
   if (equals_ignore_case(token, "machine_info")) {
-    *value = (u8)reserved_register_index(REG_SLOT_MACHINE_INFO);
+    *value = (u8)emu_reserved_register_index(EMU_REG_SLOT_MACHINE_INFO);
     return true;
   }
 
