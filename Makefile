@@ -15,3 +15,11 @@ asm: assembler.c isa.h
 .PHONY: clean
 clean:
 	rm -f main asm
+
+.PHONY: dump-example
+dump-example: asm
+	./asm example.asm /tmp/example.bin && xxd -g1 /tmp/example.bin && rm -f /tmp/example.bin
+
+.PHONY: run-example
+run-example: emulator asm
+	./asm example.asm /tmp/example.bin && ./emulator /tmp/example.bin && rm -f /tmp/example.bin
