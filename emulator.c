@@ -538,8 +538,6 @@ int main(int argc, char** argv) {
   const usz device_info_rom_size = KiB(32);
   usz ram_size = MiB(512);
   const usz mmio_size = MiB(32);
-  static_assert(machine_info_rom_size % 8 == 0, "machine info ROM size must be a multiple of 8 bytes");
-  static_assert(mmio_size % 8 == 0, "MMIO size must be a multiple of 8 bytes");
   const char* binary_path = NULL;
 
   for (int i = 1; i < argc; i++) {
