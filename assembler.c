@@ -883,6 +883,22 @@ usz emit_directive(
 
   if (equals_ignore_case(directive, ".entry")) {
     return 0;
+  } else if (equals_ignore_case(directive, ".byte")) {
+    char* token = next_token(&cursor);
+    if (!token) {
+      error_at(loc, "expected byte value");
+      exit(1);
+    }
+
+    u64 value = 0;
+    if (!parse_imm_or_label(token, NULL, &value) || value > 0xFF) {
+      error_at(loc, "expected byte value in range 0-255");
+      exit(1);
+    }
+
+    *output = (u8)value;
+
+    return 1;
   }
 
   error_at(loc, "unknown directive");
@@ -991,6 +1007,8 @@ static usz directive_size(const char* line, char** entry_point, bool* shift_labe
 
     *shift_labels = false;
     return size_for_instruction_type(opcode_instruction_type(OP_JMP));
+  } else if (equals_ignore_case(directive, ".byte")) {
+    return 1;
   }
 
   free(copy);
