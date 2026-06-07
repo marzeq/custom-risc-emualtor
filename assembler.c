@@ -22,6 +22,7 @@ static const str_view sv_entry = { 6, ".entry" };
 static const str_view sv_byte  = { 5, ".byte"  };
 static const str_view sv_quad  = { 5, ".quad"  };
 static const str_view sv_ascii = { 6, ".ascii" };
+static const str_view sv_zero  = { 5, ".zero"  };
 
 static inline bool sv_empty(str_view sv) {
   return sv.count == 0;
@@ -1080,6 +1081,23 @@ usz emit_directive(
     return decode_string_literal(token, (char*)output);
   }
 
+  if (str_view_eq_ignore_case(directive, sv_zero)) {
+    str_view token = next_token(&cursor);
+
+    if (sv_empty(token)) {
+      error_at(loc, "expected size value");
+    }
+
+    u64 value = 0;
+
+    if (!parse_imm_or_label(token, ctx, &value)) {
+      error_at(loc, "expected size value");
+    }
+
+    memset(output, 0, (size_t)value);
+    return (usz)value;
+  }
+
   error_at(loc, "unknown directive");
   return 0;
 }
@@ -1207,6 +1225,22 @@ usz directive_size(
     }
 
     return decoded_string_literal_size(token);
+  }
+
+  if (str_view_eq_ignore_case(directive, sv_zero)) {
+    str_view token = next_token(&cursor);
+
+    if (sv_empty(token)) {
+      error_at(loc, "expected size value");
+    }
+
+    u64 value = 0;
+
+    if (!parse_imm_or_label(token, NULL, &value)) {
+      error_at(loc, "expected size value");
+    }
+
+    return (usz)value;
   }
 
   error_at(loc, "unknown directive");
