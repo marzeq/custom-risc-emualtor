@@ -64,16 +64,6 @@ These reserved registers are included in addition to the general-purpose registe
 
 The assembler accepts these reserved names directly.
 
-## Flags
-
-The `cmp` instruction sets the `flags` register using these bits:
-
-* `zero`: operands are equal
-* `less`: first operand is less than second operand
-* `greater`: first operand is greater than second operand
-
-Only one of the three bits is set for a comparison result.
-
 ## Machine Information
 
 At startup the `machine_info` register contains the address of a machine information structure located in ROM.
@@ -131,9 +121,7 @@ Fields:
 
 ### Data Movement
 
-* `loadi dst, imm`: load a 32-bit immediate into the low bits of `dst` and zero-extend to 64 bits
-* `loadil dst, imm`: load a 32-bit immediate into the low bits of `dst` and retain the high bits of `dst`
-* `loadih dst, imm`: load a 32-bit immediate into the high bits of `dst` and retain the low bits of `dst`
+* `loadi dst, imm`: load a 64-bit immediate into the low bits of `dst` and zero-extend to 64 bits
 * `mov dst, src`: copy a register
 * `load dst, base, imm`: load a 64-bit value from memory at `base + imm`
 * `store src, base, imm`: store a 64-bit value to memory at `base + imm`
@@ -152,6 +140,7 @@ Fields:
 * `mul dst, lhs, rhs`: integer multiplication
 * `div dst, lhs, rhs`: integer division
 * `mod dst, lhs, rhs`: integer remainder
+* `mulh dst, lhs, rhs`: high 64 bits of the 128-bit product of `lhs` and `rhs` (unsigned)
 
 ### Arithmetic with Immediate
 
@@ -160,6 +149,19 @@ Fields:
 * `muli dst, src, imm`: integer multiplication with immediate
 * `divi dst, src, imm`: integer division with immediate
 * `modi dst, src, imm`: integer remainder with immediate
+* `mulhi dst, src, imm`: high 64 bits of the 128-bit product of `src` and `imm` (unsigned)
+
+### Signed arithmetic
+
+* `divs dst, lhs, rhs`: signed integer division
+* `mods dst, lhs, rhs`: signed integer remainder
+* `mulhs dst, lhs, rhs`: high 64 bits of the 128-bit product of `lhs` and `rhs` (signed)
+
+### Signed arithmetic with Immediate
+
+* `divis dst, src, imm`: signed integer division with immediate
+* `modis dst, src, imm`: signed integer remainder with immediate
+* `mulhis dst, src, imm`: high 64 bits of the 128-bit
 
 ### Bitwise
 
@@ -178,16 +180,20 @@ Fields:
 
 * `shl dst, src, shift_reg`: shift left by value in `shift_reg` (`shift_reg & 63`)
 * `shr dst, src, shift_reg`: shift right by value in `shift_reg` (`shift_reg & 63`)
+* `sar dst, src, shift_reg`: arithmetic shift right by value in `shift_reg` (`shift_reg & 63`)
 
 ### Shifts with Immediate
 
 * `shli dst, src, imm`: shift left by `imm & 63`
 * `shri dst, src, imm`: shift right by `imm & 63`
+* `sari dst, src, imm`: arithmetic shift right by `imm & 63`
 
 ### Comparison
 
 * `cmp lhs, rhs`: compare two registers and update `flags`
 * `cmpi lhs, imm`: compare a register against an immediate and update `flags`
+* `cmps lhs, rhs`: signed compare two registers and update `flags`
+* `cmpsi lhs, imm`: signed compare a register against an immediate and update `flags`
 
 ### Control Flow
 
@@ -199,6 +205,20 @@ Fields:
 * `jle target`: jump if less than or equal
 * `jg target`: jump if greater than
 * `jge target`: jump if greater than or equal
+* `jo target`: jump if overflow
+* `jno target`: jump if not overflow
+* `jc target`: jump if carry
+* `jnc target`: jump if not carry
+
+<!-- ### Zero/sign extension -->
+<!---->
+<!-- * `sext8 dst, src`: sign-extend the least significant byte of `src` to 64 bits and store in `dst` -->
+<!-- * `sext16 dst, src`: sign-extend the least significant 16 bits of `src` to 64 bits and store in `dst` -->
+<!-- * `sext32 dst, src`: sign-extend the least significant 32 bits of `src` to 64 bits and store in `dst` -->
+<!---->
+<!-- * `zext8 dst, src`: zero-extend the least significant byte of `src` to 64 bits and store in `dst` -->
+<!-- * `zext16 dst, src`: zero-extend the least significant 16 bits of `src` to 64 bits and store in `dst` -->
+<!-- * `zext32 dst, src`: zero-extend the least significant 32 bits of -->
 
 ### Function Calls
 
@@ -246,7 +266,7 @@ Function calls use the program stack.
 
 `call` and `callr`:
 
-1. Push the return address (`ip + 8`) onto the stack.
+1. Push the address of the next instruction.
 2. Transfer control to the target.
 
 `ret`:

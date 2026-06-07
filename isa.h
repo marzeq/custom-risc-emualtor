@@ -171,17 +171,26 @@ typedef enum {
   OP_JMP       = 0x4e,
   OP_JMPR      = 0x4f,
 
-  // 0x50-0x5f: calls
-  OP_CALL      = 0x50,
-  OP_CALLR     = 0x51,
-  OP_RET       = 0x52,
+  // // 0x50-0x5f: zero/sign extension
+  // OP_SEXT8     = 0x50, // sign-extend 8-bit to 64-bit
+  // OP_SEXT16    = 0x51, // sign-extend 16-bit to 64-bit
+  // OP_SEXT32    = 0x52, // sign-extend 32-bit to 64-bit
+  //
+  // OP_ZEXT8     = 0x53, // zero-extend 8-bit to 64-bit
+  // OP_ZEXT16    = 0x54, // zero-extend 16-bit to 64-bit
+  // OP_ZEXT32    = 0x55, // zero-extend 32-bit to 64-bit
 
-  OP_INT       = 0x5a, // trigger interrupt
-  OP_IRET      = 0x5b, // return from interrupt
+  // 0x60-0x6f: calls
+  OP_CALL      = 0x60,
+  OP_CALLR     = 0x61,
+  OP_RET       = 0x62,
 
-  // 0x60-0x6f: stack
-  OP_PUSH      = 0x60,
-  OP_POP       = 0x61,
+  OP_INT       = 0x6a, // trigger interrupt
+  OP_IRET      = 0x6b, // return from interrupt
+
+  // 0x70-0x7f: stack
+  OP_PUSH      = 0x70,
+  OP_POP       = 0x71,
 
   // 0xf0 - 0xff: reserved for special purposes
   OP_NOP       = 0xf0,
@@ -207,6 +216,12 @@ static inline instruction_type opcode_instruction_type(opcode op) {
     case OP_NOT:
     case OP_CMP:
     case OP_CMPS:
+    // case OP_SEXT8:
+    // case OP_SEXT16:
+    // case OP_SEXT32:
+    // case OP_ZEXT8:
+    // case OP_ZEXT16:
+    // case OP_ZEXT32:
       return INSN_TYPE_2REG;
 
     case OP_ADD:
