@@ -29,6 +29,7 @@ static inline bool sv_empty(str_view sv) {
 
 typedef struct {
   str_view name;
+  str_view scope;
   u64 address;
 } label;
 
@@ -42,6 +43,11 @@ typedef struct {
   char* data;
   usz size;
 } buffer;
+
+typedef struct {
+  str_view current_global;
+  label_list labels;
+} assembler_context;
 
 void die(const char* message) {
   fprintf(stderr, "Error: %s\n", message);
@@ -273,14 +279,21 @@ usz decoded_string_literal_size(str_view literal) {
 }
 
 void label_list_add(
-  label_list* labels,
+  assembler_context* ctx,
   str_view name,
+  str_view scope,
   u64 address,
   source_location loc
 ) {
+  label_list* labels = &ctx->labels;
   for (usz i = 0; i < labels->count; i++) {
-    if (str_view_eq(labels->items[i].name, name)) {
-      error_at(loc, "duplicate label '%.*s'", (int)name.count, name.data);
+    if (str_view_eq(labels->items[i].name, name) && str_view_eq(labels->items[i].scope, scope)) {
+      error_at(
+        loc,
+        "duplicate label '%.*s'",
+        (int)name.count,
+        name.data
+      );
     }
   }
 
@@ -295,16 +308,35 @@ void label_list_add(
 
   labels->items[labels->count++] = (label) {
     .name = name,
+    .scope = scope,
     .address = address,
   };
 }
 
-bool find_label(const label_list* labels, str_view name, u64* address) {
-  for (usz i = 0; i < labels->count; i++) {
-    if (str_view_eq(labels->items[i].name, name)) {
-      *address = labels->items[i].address;
-      return true;
+bool find_label(
+  assembler_context* ctx,
+  str_view name,
+  u64* address
+) {
+  for (usz i = 0; i < ctx->labels.count; i++) {
+    label* item = &ctx->labels.items[i];
+
+    if (!str_view_eq(item->name, name)) {
+      continue;
     }
+
+    if (name.data[0] == '.') {
+      if (!str_view_eq(item->scope, ctx->current_global)) {
+        continue;
+      }
+    } else {
+      if (!sv_empty(item->scope)) {
+        continue;
+      }
+    }
+
+    *address = item->address;
+    return true;
   }
 
   return false;
@@ -385,7 +417,11 @@ bool parse_register(str_view token, u8* value) {
   return false;
 }
 
-bool parse_imm_or_label(str_view token, const label_list* labels, u64* value) {
+bool parse_imm_or_label(
+  str_view token,
+  assembler_context* ctx,
+  u64* value
+) {
   if (
     token.count >= 3 &&
     token.data[0] == '\'' &&
@@ -436,7 +472,7 @@ bool parse_imm_or_label(str_view token, const label_list* labels, u64* value) {
     return true;
   }
 
-  return find_label(labels, token, value);
+  return find_label(ctx, token, value);
 }
 
 bool opcode_from_mnemonic(str_view token, opcode* value) {
@@ -546,38 +582,10 @@ bool find_label_candidate(str_view text, usz* colon_index) {
 
 str_view consume_labels(
   str_view line,
-  label_list* labels,
+  assembler_context* ctx,
   u64 address,
   source_location loc
 ) {
-  str_view cursor = str_view_trim(line);
-
-  while (cursor.count) {
-    usz colon;
-
-    if (!find_label_candidate( cursor, &colon)) {
-      break;
-    }
-
-    label_list_add(
-      labels,
-      str_view_from_parts(
-        cursor.data,
-        colon
-      ),
-      address,
-      loc
-    );
-
-    str_view_chop_left(&cursor, colon + 1);
-
-    cursor = str_view_trim_left(cursor);
-  }
-
-  return cursor;
-}
-
-str_view skip_labels(str_view line) {
   str_view cursor = str_view_trim(line);
 
   while (cursor.count) {
@@ -587,8 +595,64 @@ str_view skip_labels(str_view line) {
       break;
     }
 
-    str_view_chop_left(&cursor, colon + 1);
+    str_view label_name =
+      str_view_from_parts(cursor.data, colon);
 
+    if (label_name.data[0] == '.') {
+      if (sv_empty(ctx->current_global)) {
+        error_at(loc, "local label without parent scope");
+      }
+
+      label_list_add(
+        ctx,
+        label_name,
+        ctx->current_global,
+        address,
+        loc
+      );
+    } else {
+      ctx->current_global = label_name;
+
+      label_list_add(
+        ctx,
+        label_name,
+        (str_view){0},
+        address,
+        loc
+      );
+    }
+
+    str_view_chop_left(&cursor, colon + 1);
+    cursor = str_view_trim_left(cursor);
+  }
+
+  return cursor;
+}
+
+str_view skip_labels(
+  str_view line,
+  assembler_context* ctx
+) {
+  str_view cursor = str_view_trim(line);
+
+  while (cursor.count) {
+    usz colon;
+
+    if (!find_label_candidate(cursor, &colon)) {
+      break;
+    }
+
+    str_view label_name =
+      str_view_from_parts(cursor.data, colon);
+
+    if (label_name.data[0] != '.') {
+      ctx->current_global = label_name;
+    } else if (sv_empty(ctx->current_global)) {
+      // should never happen if pass 1 succeeded
+      break;
+    }
+
+    str_view_chop_left(&cursor, colon + 1);
     cursor = str_view_trim_left(cursor);
   }
 
@@ -605,7 +669,7 @@ void expect_no_extra(str_view cursor, source_location loc) {
 
 usz assemble_line(
   str_view line,
-  label_list* labels,
+  assembler_context* ctx,
   u8* output,
   source_location loc
 ) {
@@ -644,7 +708,7 @@ usz assemble_line(
         error_at(loc, "expected destination register");
       }
       token = next_token(&cursor);
-      if (sv_empty(token) || !parse_imm_or_label(token, labels, &imm)) {
+      if (sv_empty(token) || !parse_imm_or_label(token, ctx, &imm)) {
         error_at(loc, "expected immediate or label");
       }
       expect_no_extra(cursor, loc);
@@ -680,7 +744,7 @@ usz assemble_line(
       }
 
       token = next_token(&cursor);
-      if (sv_empty(token) || !parse_imm_or_label(token, labels, &imm)) {
+      if (sv_empty(token) || !parse_imm_or_label(token, ctx, &imm)) {
         error_at(loc, "expected displacement");
       }
 
@@ -734,7 +798,7 @@ usz assemble_line(
       }
 
       token = next_token(&cursor);
-      if (sv_empty(token) || !parse_imm_or_label(token, labels, &imm)) {
+      if (sv_empty(token) || !parse_imm_or_label(token, ctx, &imm)) {
         error_at(loc, "expected immediate");
       }
 
@@ -791,7 +855,7 @@ usz assemble_line(
       }
 
       token = next_token(&cursor);
-      if (sv_empty(token) || !parse_imm_or_label(token, labels, &imm)) {
+      if (sv_empty(token) || !parse_imm_or_label(token, ctx, &imm)) {
         error_at(loc, "expected shift amount");
       }
 
@@ -821,7 +885,7 @@ usz assemble_line(
       }
 
       token = next_token(&cursor);
-      if (sv_empty(token) || !parse_imm_or_label(token, labels, &imm)) {
+      if (sv_empty(token) || !parse_imm_or_label(token, ctx, &imm)) {
         error_at(loc, "expected immediate");
       }
 
@@ -837,7 +901,7 @@ usz assemble_line(
     case OP_JG:
     case OP_JGE: {
       token = next_token(&cursor);
-      if (sv_empty(token) || !parse_imm_or_label(token, labels, &imm)) {
+      if (sv_empty(token) || !parse_imm_or_label(token, ctx, &imm)) {
         error_at(loc, "expected jump target");
       }
 
@@ -857,7 +921,7 @@ usz assemble_line(
 
     case OP_CALL: {
       token = next_token(&cursor);
-      if (sv_empty(token) || !parse_imm_or_label(token, labels, &imm)) {
+      if (sv_empty(token) || !parse_imm_or_label(token, ctx, &imm)) {
         error_at(loc, "expected call target");
       }
 
@@ -952,7 +1016,7 @@ usz assemble_line(
 
 usz emit_directive(
   str_view line,
-  label_list* labels,
+  assembler_context* ctx,
   u8* output,
   source_location loc
 ) {
@@ -968,8 +1032,7 @@ usz emit_directive(
     error_at(loc, "expected directive name");
   }
 
-  if (str_view_eq_ignore_case(directive, sv_entry)
-  ) {
+  if (str_view_eq_ignore_case(directive, sv_entry)) {
     return 0;
   }
 
@@ -982,7 +1045,7 @@ usz emit_directive(
 
     u64 value = 0;
 
-    if (!parse_imm_or_label(token, labels, &value) || value > 0xFF) {
+    if (!parse_imm_or_label(token, ctx, &value) || value > 0xFF) {
       error_at(loc, "expected byte value in range 0-255");
     }
 
@@ -999,7 +1062,7 @@ usz emit_directive(
 
     u64 value = 0;
 
-    if (!parse_imm_or_label(token, labels, &value)) {
+    if (!parse_imm_or_label(token, ctx, &value)) {
       error_at(loc, "expected quad value");
     }
 
@@ -1118,6 +1181,10 @@ usz directive_size(
       error_at(loc, "expected entry point label");
     }
 
+    if (token.data[0] == '.') {
+      error_at(loc, "entry point cannot be a local label");
+    }
+
     *entry_point = token;
     *shift_labels = false;
 
@@ -1192,9 +1259,9 @@ int main(int argc, char** argv) {
   memcpy(second_pass_source, source.data, source.size + 1);
 
   str_view entry_point = {0};
-  label_list labels = {0};
   usz output_size = 0;
   usz label_address_offset = 0;
+  assembler_context ctx = {0};
 
   source_location loc = {
     .file = input_path,
@@ -1216,7 +1283,7 @@ int main(int argc, char** argv) {
       continue;
     }
 
-    str_view cursor = consume_labels(line, &labels, (u64)label_address_offset, loc);
+    str_view cursor = consume_labels(line, &ctx, (u64)label_address_offset, loc);
 
     cursor = normalize_line(cursor);
 
@@ -1249,15 +1316,15 @@ int main(int argc, char** argv) {
 
   u64 entry_address = 0;
 
-  if (entry_point.count != 0 && !find_label(&labels, entry_point, &entry_address)) {
+  if (entry_point.count != 0 && !find_label(&ctx, entry_point, &entry_address)) {
     dief("entry point label '%.*s' not found", svpfarg(entry_point));
   }
 
   if (entry_point.count != 0) {
     usz jmp_size = size_for_instruction_type(opcode_instruction_type(OP_JMP));
 
-    for (usz i = 0; i < labels.count; i++) {
-      labels.items[i].address += jmp_size;
+    for (usz i = 0; i < ctx.labels.count; i++) {
+      ctx.labels.items[i].address += jmp_size;
     }
   }
 
@@ -1278,6 +1345,8 @@ int main(int argc, char** argv) {
     output_offset += size_for_instruction_type(opcode_instruction_type(OP_JMP));
   }
 
+  ctx.current_global = (str_view){0};
+
   while (second_pass.count) {
     str_view line = str_view_chop_by_delim(&second_pass, '\n');
 
@@ -1289,7 +1358,7 @@ int main(int argc, char** argv) {
       continue;
     }
 
-    str_view cursor = skip_labels(line);
+    str_view cursor = skip_labels(line, &ctx);
 
     cursor = normalize_line(cursor);
 
@@ -1301,9 +1370,9 @@ int main(int argc, char** argv) {
     usz written;
 
     if (cursor.data[0] == '.') {
-      written = emit_directive(cursor, &labels, output + output_offset, loc);
+      written = emit_directive(cursor, &ctx, output + output_offset, loc);
     } else {
-      written = assemble_line(cursor, &labels, output + output_offset, loc);
+      written = assemble_line(cursor, &ctx, output + output_offset, loc);
     }
 
     output_offset += written;
@@ -1313,9 +1382,8 @@ int main(int argc, char** argv) {
   if (entry_point.count != 0) {
     u64 entry_address = 0;
 
-    if (!find_label( &labels, entry_point, &entry_address)) {
-      dief("entry point label '%.*s' not found", svpfarg(entry_point)
-      );
+    if (!find_label(&ctx, entry_point, &entry_address)) {
+      dief("entry point label '%.*s' not found", svpfarg(entry_point));
     }
 
     instruction_0reg_imm entry_insn = {
@@ -1348,7 +1416,7 @@ int main(int argc, char** argv) {
     fflush(stdout);
   }
 
-  free(labels.items);
+  free(ctx.labels.items);
   free(output);
   free(source.data);
 
