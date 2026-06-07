@@ -509,6 +509,18 @@ bool opcode_from_mnemonic(str_view token, opcode* value) {
   if (str_view_eq_ignore_case(token, str_view_from_cstr("divi")))      { *value = OP_DIVI; return true; }
   if (str_view_eq_ignore_case(token, str_view_from_cstr("modi")))      { *value = OP_MODI; return true; }
 
+  if (str_view_eq_ignore_case(token, str_view_from_cstr("mulh")))      { *value = OP_MULH; return true; }
+  if (str_view_eq_ignore_case(token, str_view_from_cstr("mulhi")))     { *value = OP_MULHI; return true; }
+
+  if (str_view_eq_ignore_case(token, str_view_from_cstr("mulhs")))     { *value = OP_MULHS; return true; }
+  if (str_view_eq_ignore_case(token, str_view_from_cstr("mulhsi")))    { *value = OP_MULHSI; return true; }
+
+  if (str_view_eq_ignore_case(token, str_view_from_cstr("divs")))      { *value = OP_DIVS; return true; }
+  if (str_view_eq_ignore_case(token, str_view_from_cstr("mods")))      { *value = OP_MODS; return true; }
+
+  if (str_view_eq_ignore_case(token, str_view_from_cstr("divsi")))     { *value = OP_DIVSI; return true; }
+  if (str_view_eq_ignore_case(token, str_view_from_cstr("modsi")))     { *value = OP_MODSI; return true; }
+
   // bitwise
 
   if (str_view_eq_ignore_case(token, str_view_from_cstr("and")))       { *value = OP_AND; return true; }
@@ -526,10 +538,15 @@ bool opcode_from_mnemonic(str_view token, opcode* value) {
   if (str_view_eq_ignore_case(token, str_view_from_cstr("shli")))      { *value = OP_SHLI; return true; }
   if (str_view_eq_ignore_case(token, str_view_from_cstr("shri")))      { *value = OP_SHRI; return true; }
 
+  if (str_view_eq_ignore_case(token, str_view_from_cstr("sar")))       { *value = OP_SAR; return true; }
+  if (str_view_eq_ignore_case(token, str_view_from_cstr("sari")))      { *value = OP_SARI; return true; }
+
   // compare / branch
 
   if (str_view_eq_ignore_case(token, str_view_from_cstr("cmp")))       { *value = OP_CMP; return true; }
   if (str_view_eq_ignore_case(token, str_view_from_cstr("cmpi")))      { *value = OP_CMPI; return true; }
+  if (str_view_eq_ignore_case(token, str_view_from_cstr("cmps")))      { *value = OP_CMPS; return true; }
+  if (str_view_eq_ignore_case(token, str_view_from_cstr("cmpsi")))     { *value = OP_CMPSI; return true; }
 
   if (str_view_eq_ignore_case(token, str_view_from_cstr("jmp")))       { *value = OP_JMP; return true; }
   if (str_view_eq_ignore_case(token, str_view_from_cstr("jmpr")))      { *value = OP_JMPR; return true; }
@@ -540,6 +557,10 @@ bool opcode_from_mnemonic(str_view token, opcode* value) {
   if (str_view_eq_ignore_case(token, str_view_from_cstr("jle")))       { *value = OP_JLE; return true; }
   if (str_view_eq_ignore_case(token, str_view_from_cstr("jg")))        { *value = OP_JG; return true; }
   if (str_view_eq_ignore_case(token, str_view_from_cstr("jge")))       { *value = OP_JGE; return true; }
+  if (str_view_eq_ignore_case(token, str_view_from_cstr("jo")))        { *value = OP_JO; return true; }
+  if (str_view_eq_ignore_case(token, str_view_from_cstr("jno")))       { *value = OP_JNO; return true; }
+  if (str_view_eq_ignore_case(token, str_view_from_cstr("jc")))        { *value = OP_JC; return true; }
+  if (str_view_eq_ignore_case(token, str_view_from_cstr("jnc")))       { *value = OP_JNC; return true; }
 
   // calls
 
@@ -764,9 +785,16 @@ usz assemble_line(
     case OP_MUL:
     case OP_DIV:
     case OP_MOD:
+    case OP_MULH:
+    case OP_MULHS:
+    case OP_DIVS:
+    case OP_MODS:
     case OP_AND:
     case OP_OR:
-    case OP_XOR: {
+    case OP_XOR:
+    case OP_SHL:
+    case OP_SHR:
+    case OP_SAR: {
       token = next_token(&cursor);
       if (sv_empty(token) || !parse_register(token, &a)) {
         error_at(loc, "expected destination register");
@@ -791,9 +819,16 @@ usz assemble_line(
     case OP_MULI:
     case OP_DIVI:
     case OP_MODI:
+    case OP_MULHI:
+    case OP_MULHSI:
+    case OP_DIVSI:
+    case OP_MODSI:
     case OP_ANDI:
     case OP_ORI:
-    case OP_XORI: {
+    case OP_XORI:
+    case OP_SHLI:
+    case OP_SHRI:
+    case OP_SARI: {
       token = next_token(&cursor);
       if (sv_empty(token) || !parse_register(token, &a)) {
         error_at(loc, "expected destination register");
@@ -828,49 +863,8 @@ usz assemble_line(
       break;
     }
 
-    case OP_SHL:
-    case OP_SHR: {
-      token = next_token(&cursor);
-      if (sv_empty(token) || !parse_register(token, &a)) {
-        error_at(loc, "expected destination register");
-      }
-
-      token = next_token(&cursor);
-      if (sv_empty(token) || !parse_register(token, &b)) {
-        error_at(loc, "expected source register");
-      }
-
-      token = next_token(&cursor);
-      if (sv_empty(token) || !parse_register(token, &c)) {
-        error_at(loc, "expected shift amount register");
-      }
-
-      expect_no_extra(cursor, loc);
-      break;
-    }
-
-    case OP_SHLI:
-    case OP_SHRI: {
-      token = next_token(&cursor);
-      if (sv_empty(token) || !parse_register(token, &a)) {
-        error_at(loc, "expected destination register");
-      }
-
-      token = next_token(&cursor);
-      if (sv_empty(token) || !parse_register(token, &b)) {
-        error_at(loc, "expected source register");
-      }
-
-      token = next_token(&cursor);
-      if (sv_empty(token) || !parse_imm_or_label(token, ctx, &imm)) {
-        error_at(loc, "expected shift amount");
-      }
-
-      expect_no_extra(cursor, loc);
-      break;
-    }
-
-    case OP_CMP: {
+    case OP_CMP:
+    case OP_CMPS: {
       token = next_token(&cursor);
       if (sv_empty(token) || !parse_register(token, &a)) {
         error_at(loc, "expected first compare register");
@@ -885,7 +879,8 @@ usz assemble_line(
       break;
     }
 
-    case OP_CMPI: {
+    case OP_CMPI:
+    case OP_CMPSI: {
       token = next_token(&cursor);
       if (sv_empty(token) || !parse_register(token, &a)) {
         error_at(loc, "expected compare register");
@@ -906,7 +901,11 @@ usz assemble_line(
     case OP_JL:
     case OP_JLE:
     case OP_JG:
-    case OP_JGE: {
+    case OP_JGE:
+    case OP_JO:
+    case OP_JNO:
+    case OP_JC:
+    case OP_JNC: {
       token = next_token(&cursor);
       if (sv_empty(token) || !parse_imm_or_label(token, ctx, &imm)) {
         error_at(loc, "expected jump target");

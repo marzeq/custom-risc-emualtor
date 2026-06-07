@@ -111,47 +111,73 @@ typedef enum {
   OP_DIVI      = 0x18,
   OP_MODI      = 0x19,
 
-  // 0x20-0x2f: bitwise
-  OP_AND       = 0x20,
-  OP_OR        = 0x21,
-  OP_XOR       = 0x22,
-  OP_NOT       = 0x23,
+  OP_MULH      = 0x1a, // multiply high unsigned
+  OP_MULHI     = 0x1b, // multiply high with immediate unsigned
 
-  OP_ANDI      = 0x24,
-  OP_ORI       = 0x25,
-  OP_XORI      = 0x26,
+  // 0x20-0x2f: signed arithmetic
+  OP_MULHS     = 0x20, // multiply high signed
+  OP_MULHSI    = 0x21, // multiply high with immediate signed
 
-  OP_SHL       = 0x27,
-  OP_SHR       = 0x28,
+  // signed variants of arithmetic
+  OP_DIVS      = 0x22,
+  OP_MODS      = 0x23,
 
-  OP_SHLI      = 0x29,
-  OP_SHRI      = 0x2a,
+  OP_DIVSI     = 0x24,
+  OP_MODSI     = 0x25,
 
-  // 0x30-0x3f: compare/branch
-  OP_CMP       = 0x30,
-  OP_CMPI      = 0x31,
+  // 0x30-0x3f: bitwise
+  OP_AND       = 0x30,
+  OP_OR        = 0x31,
+  OP_XOR       = 0x32,
+  OP_NOT       = 0x33,
 
-  OP_JMP       = 0x32,
-  OP_JMPR      = 0x33,
+  OP_ANDI      = 0x34,
+  OP_ORI       = 0x35,
+  OP_XORI      = 0x36,
 
-  OP_JE        = 0x34,
-  OP_JNE       = 0x35,
-  OP_JL        = 0x36,
-  OP_JLE       = 0x37,
-  OP_JG        = 0x38,
-  OP_JGE       = 0x39,
+  OP_SHL       = 0x37,
+  OP_SHR       = 0x38,
 
-  // 0x40-0x4f: calls
-  OP_CALL      = 0x40,
-  OP_CALLR     = 0x41,
-  OP_RET       = 0x42,
+  OP_SHLI      = 0x39,
+  OP_SHRI      = 0x3a,
 
-  OP_INT       = 0x4a, // trigger interrupt
-  OP_IRET      = 0x4b, // return from interrupt
+  OP_SAR       = 0x3b, // arithmetic shift right
+  OP_SARI      = 0x3c, // arithmetic shift right with immediate
 
-  // 0x50-0x5f: stack
-  OP_PUSH      = 0x50,
-  OP_POP       = 0x51,
+  // 0x40-0x4f: compare/branch
+  OP_CMP       = 0x40,
+  OP_CMPI      = 0x41,
+
+  // signed variants of compare
+  OP_CMPS      = 0x42,
+  OP_CMPSI     = 0x43,
+
+  OP_JE        = 0x44,
+  OP_JNE       = 0x45,
+  OP_JL        = 0x46,
+  OP_JLE       = 0x47,
+  OP_JG        = 0x48,
+  OP_JGE       = 0x49,
+  OP_JO        = 0x4a, // overflow
+  OP_JNO       = 0x4b, // no overflow
+  OP_JC        = 0x4c, // carry
+  OP_JNC       = 0x4d, // no carry
+
+  // unconditional jumps
+  OP_JMP       = 0x4e,
+  OP_JMPR      = 0x4f,
+
+  // 0x50-0x5f: calls
+  OP_CALL      = 0x50,
+  OP_CALLR     = 0x51,
+  OP_RET       = 0x52,
+
+  OP_INT       = 0x5a, // trigger interrupt
+  OP_IRET      = 0x5b, // return from interrupt
+
+  // 0x60-0x6f: stack
+  OP_PUSH      = 0x60,
+  OP_POP       = 0x61,
 
   // 0xf0 - 0xff: reserved for special purposes
   OP_NOP       = 0xf0,
@@ -176,6 +202,7 @@ static inline instruction_type opcode_instruction_type(opcode op) {
     case OP_MOV:
     case OP_NOT:
     case OP_CMP:
+    case OP_CMPS:
       return INSN_TYPE_2REG;
 
     case OP_ADD:
@@ -183,11 +210,16 @@ static inline instruction_type opcode_instruction_type(opcode op) {
     case OP_MUL:
     case OP_DIV:
     case OP_MOD:
+    case OP_DIVS:
+    case OP_MODS:
+    case OP_MULH:
+    case OP_MULHS:
     case OP_AND:
     case OP_OR:
     case OP_XOR:
     case OP_SHL:
     case OP_SHR:
+    case OP_SAR:
       return INSN_TYPE_3REG;
 
     case OP_JMP:
@@ -197,12 +229,17 @@ static inline instruction_type opcode_instruction_type(opcode op) {
     case OP_JLE:
     case OP_JG:
     case OP_JGE:
+    case OP_JO:
+    case OP_JNO:
+    case OP_JC:
+    case OP_JNC:
     case OP_CALL:
     case OP_INT:
       return INSN_TYPE_0REG_IMM;
 
     case OP_LOADI:
     case OP_CMPI:
+    case OP_CMPSI:
       return INSN_TYPE_1REG_IMM;
 
     case OP_LOAD:
@@ -215,11 +252,16 @@ static inline instruction_type opcode_instruction_type(opcode op) {
     case OP_MULI:
     case OP_DIVI:
     case OP_MODI:
+    case OP_DIVSI:
+    case OP_MODSI:
+    case OP_MULHI:
+    case OP_MULHSI:
     case OP_ANDI:
     case OP_ORI:
     case OP_XORI:
     case OP_SHLI:
     case OP_SHRI:
+    case OP_SARI:
       return INSN_TYPE_2REG_IMM;
   }
 

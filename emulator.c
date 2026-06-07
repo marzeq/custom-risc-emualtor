@@ -25,10 +25,31 @@ static void terminal_raw_enable(void) {
 #define KiB(x) ((x) * 1024)
 #define MiB(x) ((x) * 1024 * 1024)
 
-#define FLAG_ZERO       (1u << 0)
-#define FLAG_LESS       (1u << 1)
-#define FLAG_GREATER    (1u << 2)
-#define FLAG_INT_ENABLE (1u << 16)
+#define FLAG_ZERO       (1ull << 0)
+#define FLAG_LESS       (1ull << 1)
+#define FLAG_GREATER    (1ull << 2)
+
+#define FLAG_CARRY      (1u << 3)
+#define FLAG_OVERFLOW   (1ull << 4)
+
+#define FLAG_INT_ENABLE (1ull << 16)
+
+static inline void set_arithmetic_flags(
+  u64 *flags,
+  bool carry,
+  bool overflow
+) {
+  const u64 mask =
+    FLAG_CARRY |
+    FLAG_OVERFLOW;
+
+  u64 new_flags = *flags & ~mask;
+
+  if (carry)    new_flags |= FLAG_CARRY;
+  if (overflow) new_flags |= FLAG_OVERFLOW;
+
+  *flags = new_flags;
+}
 
 typedef struct {
   u64 version;
@@ -451,6 +472,18 @@ static bool jump_condition_is_met(u64 flags, opcode op) {
   if (op == OP_JGE) {
     return (flags & (FLAG_GREATER | FLAG_ZERO)) != 0;
   }
+  if (op == OP_JO) {
+    return (flags & FLAG_OVERFLOW) != 0;
+  }
+  if (op == OP_JNO) {
+    return (flags & FLAG_OVERFLOW) == 0;
+  }
+  if (op == OP_JC) {
+    return (flags & FLAG_CARRY) != 0;
+  }
+  if (op == OP_JNC) {
+    return (flags & FLAG_CARRY) == 0;
+  }
   return false;
 }
 
@@ -690,7 +723,22 @@ int main(int argc, char** argv) {
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
-        registers[insn.a] = registers[insn.b] + registers[insn.c];
+        u64 lhs = registers[insn.b];
+        u64 rhs = registers[insn.c];
+        u64 result = lhs + rhs;
+
+        bool carry = result < lhs;
+
+        bool overflow =
+          (((lhs ^ result) & (rhs ^ result)) >> 63) != 0;
+
+        registers[insn.a] = result;
+
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          carry,
+          overflow
+        );
         ip_written = (insn.a == ip_idx);
         break;
       }
@@ -700,7 +748,22 @@ int main(int argc, char** argv) {
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
-        registers[insn.a] = registers[insn.b] - registers[insn.c];
+        u64 lhs = registers[insn.b];
+        u64 rhs = registers[insn.c];
+        u64 result = lhs - rhs;
+
+        bool carry = lhs < rhs;
+
+        bool overflow =
+          (((lhs ^ rhs) & (lhs ^ result)) >> 63) != 0;
+
+        registers[insn.a] = result;
+
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          carry,
+          overflow
+        );
         ip_written = (insn.a == ip_idx);
         break;
       }
@@ -710,11 +773,72 @@ int main(int argc, char** argv) {
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
-        registers[insn.a] = registers[insn.b] * registers[insn.c];
+        u64 lhs = registers[insn.b];
+        u64 rhs = registers[insn.c];
+
+        __uint128_t wide = (__uint128_t)lhs * (__uint128_t)rhs;
+
+        u64 result = (u64)wide;
+
+        bool overflow = (wide >> 64) != 0;
+
+        registers[insn.a] = result;
+
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          overflow,
+          overflow
+        );
         ip_written = (insn.a == ip_idx);
         break;
       }
-      
+
+      case OP_MULH: {
+        get_insn(3reg);
+        if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
+          RUNTIME_ERROR("invalid register operand");
+        }
+        u64 lhs = registers[insn.b];
+        u64 rhs = registers[insn.c];
+
+        __uint128_t wide = (__uint128_t)lhs * (__uint128_t)rhs;
+
+        u64 result = (u64)(wide >> 64);
+
+        registers[insn.a] = result;
+
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          false,
+          false
+        );
+        ip_written = (insn.a == ip_idx);
+        break;
+      }
+
+      case OP_MULHS: {
+        get_insn(3reg);
+        if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
+          RUNTIME_ERROR("invalid register operand");
+        }
+        i64 lhs = (i64)registers[insn.b];
+        i64 rhs = (i64)registers[insn.c];
+
+        __int128_t wide = (__int128_t)lhs * (__int128_t)rhs;
+
+        i64 result = (i64)(wide >> 64);
+
+        registers[insn.a] = (u64)result;
+
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          false,
+          false
+        );
+        ip_written = (insn.a == ip_idx);
+        break;
+      }
+
       case OP_DIV: {
         get_insn(3reg);
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
@@ -723,50 +847,36 @@ int main(int argc, char** argv) {
         if (registers[insn.c] == 0) {
           RUNTIME_ERROR("division by zero");
         }
-        registers[insn.a] = registers[insn.b] / registers[insn.c];
+        u64 result = registers[insn.b] / registers[insn.c];
+
+        registers[insn.a] = result;
+
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          false,
+          false
+        );
         ip_written = (insn.a == ip_idx);
         break;
       }
 
-      case OP_ADDI: {
-        get_insn(2reg_imm);
-        if (insn.a >= register_count || insn.b >= register_count) {
+      case OP_DIVS: {
+        get_insn(3reg);
+        if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
-        registers[insn.a] = registers[insn.b] + (u64)(i32)insn.imm;
-        ip_written = (insn.a == ip_idx);
-        break;
-      }
-
-      case OP_SUBI: {
-        get_insn(2reg_imm);
-        if (insn.a >= register_count || insn.b >= register_count) {
-          RUNTIME_ERROR("invalid register operand");
-        }
-        registers[insn.a] = registers[insn.b] - (u64)(i32)insn.imm;
-        ip_written = (insn.a == ip_idx);
-        break;
-      }
-
-      case OP_MULI: {
-        get_insn(2reg_imm);
-        if (insn.a >= register_count || insn.b >= register_count) {
-          RUNTIME_ERROR("invalid register operand");
-        }
-        registers[insn.a] = registers[insn.b] * (u64)(i32)insn.imm;
-        ip_written = (insn.a == ip_idx);
-        break;
-      }
-
-      case OP_DIVI: {
-        get_insn(2reg_imm);
-        if (insn.a >= register_count || insn.b >= register_count) {
-          RUNTIME_ERROR("invalid register operand");
-        }
-        if ((i32)insn.imm == 0) {
+        if ((i64)registers[insn.c] == 0) {
           RUNTIME_ERROR("division by zero");
         }
-        registers[insn.a] = registers[insn.b] / (u64)(i32)insn.imm;
+        i64 result = (i64)registers[insn.b] / (i64)registers[insn.c];
+
+        registers[insn.a] = (u64)result;
+
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          false,
+          false
+        );
         ip_written = (insn.a == ip_idx);
         break;
       }
@@ -779,7 +889,199 @@ int main(int argc, char** argv) {
         if (registers[insn.c] == 0) {
           RUNTIME_ERROR("division by zero");
         }
-        registers[insn.a] = registers[insn.b] % registers[insn.c];
+        u64 result = registers[insn.b] % registers[insn.c];
+
+        registers[insn.a] = result;
+
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          false,
+          false
+        );
+        ip_written = (insn.a == ip_idx);
+        break;
+      }
+
+      case OP_MODS: {
+        get_insn(3reg);
+        if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
+          RUNTIME_ERROR("invalid register operand");
+        }
+        if ((i64)registers[insn.c] == 0) {
+          RUNTIME_ERROR("division by zero");
+        }
+        i64 result = (i64)registers[insn.b] % (i64)registers[insn.c];
+
+        registers[insn.a] = (u64)result;
+
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          false,
+          false
+        );
+        ip_written = (insn.a == ip_idx);
+        break;
+      }
+
+      case OP_ADDI: {
+        get_insn(2reg_imm);
+        if (insn.a >= register_count || insn.b >= register_count) {
+          RUNTIME_ERROR("invalid register operand");
+        }
+        u64 lhs = registers[insn.b];
+        u64 rhs = insn.imm;
+        u64 result = lhs + rhs;
+
+        bool carry = result < lhs;
+
+        bool overflow =
+          (((lhs ^ result) & (rhs ^ result)) >> 63) != 0;
+
+        registers[insn.a] = result;
+
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          carry,
+          overflow
+        );
+        ip_written = (insn.a == ip_idx);
+        break;
+      }
+
+      case OP_SUBI: {
+        get_insn(2reg_imm);
+        if (insn.a >= register_count || insn.b >= register_count) {
+          RUNTIME_ERROR("invalid register operand");
+        }
+        u64 lhs = registers[insn.b];
+        u64 rhs = insn.imm;
+        u64 result = lhs - rhs;
+
+        bool carry = lhs < rhs;
+
+        bool overflow =
+          (((lhs ^ rhs) & (lhs ^ result)) >> 63) != 0;
+
+        registers[insn.a] = result;
+
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          carry,
+          overflow
+        );
+        ip_written = (insn.a == ip_idx);
+        break;
+      }
+
+      case OP_MULI: {
+        get_insn(2reg_imm);
+        if (insn.a >= register_count || insn.b >= register_count) {
+          RUNTIME_ERROR("invalid register operand");
+        }
+        u64 lhs = registers[insn.b];
+        u64 rhs = insn.imm;
+
+        __uint128_t wide = (__uint128_t)lhs * (__uint128_t)rhs;
+
+        u64 result = (u64)wide;
+
+        bool overflow = (wide >> 64) != 0;
+
+        registers[insn.a] = result;
+
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          overflow,
+          overflow
+        );
+        ip_written = (insn.a == ip_idx);
+        break;
+      }
+
+      case OP_MULHI: {
+        get_insn(2reg_imm);
+        if (insn.a >= register_count || insn.b >= register_count) {
+          RUNTIME_ERROR("invalid register operand");
+        }
+        u64 lhs = registers[insn.b];
+        u64 rhs = insn.imm;
+
+        __uint128_t wide = (__uint128_t)lhs * (__uint128_t)rhs;
+
+        u64 result = (u64)(wide >> 64);
+
+        registers[insn.a] = result;
+
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          false,
+          false
+        );
+        ip_written = (insn.a == ip_idx);
+        break;
+      }
+
+      case OP_MULHSI: {
+        get_insn(2reg_imm);
+        if (insn.a >= register_count || insn.b >= register_count) {
+          RUNTIME_ERROR("invalid register operand");
+        }
+        i64 lhs = (i64)registers[insn.b];
+        i64 rhs = (i64)insn.imm;
+
+        __int128_t wide = (__int128_t)lhs * (__int128_t)rhs;
+
+        i64 result = (i64)(wide >> 64);
+
+        registers[insn.a] = (u64)result;
+
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          false,
+          false
+        );
+        ip_written = (insn.a == ip_idx);
+        break;
+      }
+
+      case OP_DIVI: {
+        get_insn(2reg_imm);
+        if (insn.a >= register_count || insn.b >= register_count) {
+          RUNTIME_ERROR("invalid register operand");
+        }
+        if ((i32)insn.imm == 0) {
+          RUNTIME_ERROR("division by zero");
+        }
+        u64 result = registers[insn.b] / insn.imm;
+
+        registers[insn.a] = result;
+
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          false,
+          false
+        );
+        ip_written = (insn.a == ip_idx);
+        break;
+      }
+
+      case OP_DIVSI: {
+        get_insn(2reg_imm);
+        if (insn.a >= register_count || insn.b >= register_count) {
+          RUNTIME_ERROR("invalid register operand");
+        }
+        if ((i32)insn.imm == 0) {
+          RUNTIME_ERROR("division by zero");
+        }
+        i64 result = (i64)registers[insn.b] / (i64)(i32)insn.imm;
+
+        registers[insn.a] = (u64)result;
+
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          false,
+          false
+        );
         ip_written = (insn.a == ip_idx);
         break;
       }
@@ -792,7 +1094,36 @@ int main(int argc, char** argv) {
         if ((i32)insn.imm == 0) {
           RUNTIME_ERROR("division by zero");
         }
-        registers[insn.a] = registers[insn.b] % (u64)(i32)insn.imm;
+        u64 result = registers[insn.b] % insn.imm;
+
+        registers[insn.a] = result;
+
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          false,
+          false
+        );
+        ip_written = (insn.a == ip_idx);
+        break;
+      }
+
+      case OP_MODSI: {
+        get_insn(2reg_imm);
+        if (insn.a >= register_count || insn.b >= register_count) {
+          RUNTIME_ERROR("invalid register operand");
+        }
+        if ((i32)insn.imm == 0) {
+          RUNTIME_ERROR("division by zero");
+        }
+        i64 result = (i64)registers[insn.b] % (i64)(i32)insn.imm;
+
+        registers[insn.a] = (u64)result;
+
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          false,
+          false
+        );
         ip_written = (insn.a == ip_idx);
         break;
       }
@@ -882,7 +1213,22 @@ int main(int argc, char** argv) {
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
-        registers[insn.a] = registers[insn.b] << (registers[insn.c] & 63u);
+        u64 value = registers[insn.b];
+        u32 shift = registers[insn.c] & 63u;
+
+        u64 result = value << shift;
+
+        bool carry =
+          shift != 0 &&
+          ((value >> (64 - shift)) & 1);
+
+        registers[insn.a] = result;
+
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          carry,
+          false
+        );
         ip_written = (insn.a == ip_idx);
         break;
       }
@@ -892,7 +1238,61 @@ int main(int argc, char** argv) {
         if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
-        registers[insn.a] = registers[insn.b] >> (registers[insn.c] & 63u);
+        u64 value = registers[insn.b];
+        u32 shift = registers[insn.c] & 63u;
+
+        u64 result = value >> shift;
+
+        bool carry =
+          shift != 0 &&
+          ((value >> (shift - 1)) & 1);
+
+        registers[insn.a] = result;
+
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          carry,
+          false
+        );
+        ip_written = (insn.a == ip_idx);
+        break;
+      }
+
+      case OP_SAR: {
+        get_insn(3reg);
+
+        if (insn.a >= register_count || insn.b >= register_count || insn.c >= register_count) {
+          RUNTIME_ERROR("invalid register operand");
+        }
+
+        u64 value = registers[insn.b];
+        u32 shift = (u32)(registers[insn.c] & 63u);
+
+        u64 result = (u64)((i64)value >> shift);
+
+        bool carry =
+          shift != 0 &&
+          ((value >> (shift - 1)) & 1u);
+
+        registers[insn.a] = result;
+
+        const u64 flag_mask =
+          FLAG_ZERO |
+          FLAG_CARRY |
+          FLAG_OVERFLOW;
+
+        u64 new_flags = registers[flags_idx] & ~flag_mask;
+
+        if (result == 0) {
+          new_flags |= FLAG_ZERO;
+        }
+
+        if (carry) {
+          new_flags |= FLAG_CARRY;
+        }
+
+        registers[flags_idx] = new_flags;
+
         ip_written = (insn.a == ip_idx);
         break;
       }
@@ -902,7 +1302,22 @@ int main(int argc, char** argv) {
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
-        registers[insn.a] = registers[insn.b] << ((u64)(i32)insn.imm & 63u);
+        u64 value = registers[insn.b];
+        u32 shift = insn.imm & 63u;
+
+        u64 result = value << shift;
+
+        bool carry =
+          shift != 0 &&
+          ((value >> (64 - shift)) & 1);
+
+        registers[insn.a] = result;
+
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          carry,
+          false
+        );
         ip_written = (insn.a == ip_idx);
         break;
       }
@@ -912,7 +1327,59 @@ int main(int argc, char** argv) {
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
-        registers[insn.a] = registers[insn.b] >> ((u64)(i32)insn.imm & 63u);
+        u64 value = registers[insn.b];
+        u32 shift = insn.imm & 63u;
+
+        u64 result = value >> shift;
+
+        bool carry =
+          shift != 0 &&
+          ((value >> (shift - 1)) & 1);
+
+        registers[insn.a] = result;
+
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          carry,
+          false
+        );
+        ip_written = (insn.a == ip_idx);
+        break;
+      }
+
+      case OP_SARI: {
+        get_insn(2reg_imm);
+        if (insn.a >= register_count || insn.b >= register_count) {
+          RUNTIME_ERROR("invalid register operand");
+        }
+        u64 value = registers[insn.b];
+        u32 shift = (u32)(((u64)(i32)insn.imm) & 63u);
+
+        u64 result = (u64)((i64)value >> shift);
+
+        bool carry =
+          shift != 0 &&
+          ((value >> (shift - 1)) & 1u);
+
+        registers[insn.a] = result;
+
+        const u64 flag_mask =
+          FLAG_ZERO |
+          FLAG_CARRY |
+          FLAG_OVERFLOW;
+
+        u64 new_flags = registers[flags_idx] & ~flag_mask;
+
+        if (result == 0) {
+          new_flags |= FLAG_ZERO;
+        }
+
+        if (carry) {
+          new_flags |= FLAG_CARRY;
+        }
+
+        registers[flags_idx] = new_flags;
+
         ip_written = (insn.a == ip_idx);
         break;
       }
@@ -1098,12 +1565,74 @@ int main(int argc, char** argv) {
         break;
       }
 
+      case OP_CMPS: {
+        get_insn(2reg);
+
+        if (insn.a >= register_count || insn.b >= register_count) {
+          RUNTIME_ERROR("invalid register operand");
+        }
+
+        i64 left = (i64)registers[insn.a];
+        i64 right = (i64)registers[insn.b];
+
+        const u64 condition_mask =
+          FLAG_ZERO |
+          FLAG_LESS |
+          FLAG_GREATER;
+
+        u64 new_flags = registers[flags_idx] & ~condition_mask;
+
+        if (left == right) {
+          new_flags |= FLAG_ZERO;
+        } else if (left < right) {
+          new_flags |= FLAG_LESS;
+        } else {
+          new_flags |= FLAG_GREATER;
+        }
+
+        registers[flags_idx] = new_flags;
+        break;
+      }
+
+      case OP_CMPSI: {
+        get_insn(1reg_imm);
+
+        if (insn.a >= register_count) {
+          RUNTIME_ERROR("invalid register operand");
+        }
+
+        i64 left = (i64)registers[insn.a];
+        i64 right = (i64)(i32)insn.imm;
+
+        const u64 condition_mask =
+          FLAG_ZERO |
+          FLAG_LESS |
+          FLAG_GREATER;
+
+        u64 new_flags = registers[flags_idx] & ~condition_mask;
+
+        if (left == right) {
+          new_flags |= FLAG_ZERO;
+        } else if (left < right) {
+          new_flags |= FLAG_LESS;
+        } else {
+          new_flags |= FLAG_GREATER;
+        }
+
+        registers[flags_idx] = new_flags;
+        break;
+      }
+
       case OP_JE:
       case OP_JNE:
       case OP_JL:
       case OP_JLE:
       case OP_JG:
-      case OP_JGE: {
+      case OP_JGE:
+      case OP_JO:
+      case OP_JNO:
+      case OP_JC:
+      case OP_JNC: {
         get_insn(0reg_imm);
         if (jump_condition_is_met(registers[flags_idx], op)) {
           registers[ip_idx] = (u64)insn.imm;
