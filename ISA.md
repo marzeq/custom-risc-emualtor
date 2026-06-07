@@ -337,6 +337,19 @@ func2:
     jmp .loop
 ```
 
+### Directives
+
+The assembler supports these directives:
+
+* `.entry (label)`: first instruction should be `jump (label)` to set the entry point. Local labels are not allowed in the entry point. May only be used once.
+* `.byte (byte)`: emit a single byte with the given value
+* `.quad (quad)`: emit an 8-byte little-endian value with the given value
+* `.ascii (string)`: emit the bytes of the given string without a null terminator
+
+### Preprocessor
+
+The assembly is first ran through the standard C preprocessor, so it supports `#define`, `#include`, and so on.
+
 ## Suggested ABI
 
 The ISA does not mandate an ABI, but the reference runtime uses:
