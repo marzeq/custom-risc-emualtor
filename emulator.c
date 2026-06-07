@@ -703,7 +703,7 @@ int main(int argc, char** argv) {
         if (insn.a >= register_count) {
           RUNTIME_ERROR("invalid destination register");
         }
-        registers[insn.a] = (u64)(u32)insn.imm;
+        registers[insn.a] = insn.imm;
         ip_written = (insn.a == ip_idx);
         break;
       }
@@ -1049,7 +1049,7 @@ int main(int argc, char** argv) {
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
-        if ((i32)insn.imm == 0) {
+        if ((i64)insn.imm == 0) {
           RUNTIME_ERROR("division by zero");
         }
         u64 result = registers[insn.b] / insn.imm;
@@ -1070,10 +1070,10 @@ int main(int argc, char** argv) {
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
-        if ((i32)insn.imm == 0) {
+        if ((i64)insn.imm == 0) {
           RUNTIME_ERROR("division by zero");
         }
-        i64 result = (i64)registers[insn.b] / (i64)(i32)insn.imm;
+        i64 result = (i64)registers[insn.b] / (i64)insn.imm;
 
         registers[insn.a] = (u64)result;
 
@@ -1091,7 +1091,7 @@ int main(int argc, char** argv) {
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
-        if ((i32)insn.imm == 0) {
+        if ((i64)insn.imm == 0) {
           RUNTIME_ERROR("division by zero");
         }
         u64 result = registers[insn.b] % insn.imm;
@@ -1112,7 +1112,7 @@ int main(int argc, char** argv) {
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
-        if ((i32)insn.imm == 0) {
+        if ((i64)insn.imm == 0) {
           RUNTIME_ERROR("division by zero");
         }
         i64 result = (i64)registers[insn.b] % (i64)(i32)insn.imm;
@@ -1203,7 +1203,7 @@ int main(int argc, char** argv) {
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
-        registers[insn.a] = registers[insn.b] + (i64)(i32)insn.imm;
+        registers[insn.a] = registers[insn.b] + (i64)insn.imm;
         ip_written = (insn.a == ip_idx);
         break;
       }
@@ -1353,7 +1353,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid register operand");
         }
         u64 value = registers[insn.b];
-        u32 shift = (u32)(((u64)(i32)insn.imm) & 63u);
+        u32 shift = (u32)(insn.imm & 63u);
 
         u64 result = (u64)((i64)value >> shift);
 
@@ -1390,7 +1390,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid register operand");
         }
 
-        u64 address = registers[insn.b] + (i64)(i32)insn.imm;
+        u64 address = registers[insn.b] + insn.imm;
         if (!read_u64_memory(
           address,
           firmware_rom_size,
@@ -1416,7 +1416,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid register operand");
         }
 
-        u64 address = registers[insn.b] + (i64)(i32)insn.imm;
+        u64 address = registers[insn.b] + insn.imm;
         if (!write_u64_memory(
           address,
           firmware_rom_size,
@@ -1435,14 +1435,14 @@ int main(int argc, char** argv) {
         break;
       }
 
-      case OP_LOADB: {
+      case OP_LOAD8: {
         get_insn(2reg_imm);
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
 
         u8 value;
-        u64 address = registers[insn.b] + (i64)(i32)insn.imm;
+        u64 address = registers[insn.b] + insn.imm;
 
         if (!read_u8_memory(
           address,
@@ -1465,13 +1465,13 @@ int main(int argc, char** argv) {
         break;
       }
 
-      case OP_STOREB: {
+      case OP_STORE8: {
         get_insn(2reg_imm);
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
 
-        u64 address = registers[insn.b] + (i64)(i32)insn.imm;
+        u64 address = registers[insn.b] + insn.imm;
 
         if (!write_u8_memory(
           address,
@@ -1494,7 +1494,7 @@ int main(int argc, char** argv) {
 
       case OP_JMP: {
         get_insn(0reg_imm);
-        registers[ip_idx] = (u64)insn.imm;
+        registers[ip_idx] = insn.imm;
         continue;
       }
 
@@ -1544,7 +1544,7 @@ int main(int argc, char** argv) {
         }
 
         u64 left = registers[insn.a];
-        u64 right = (u64)(i32)insn.imm;
+        u64 right = insn.imm;
 
         const u64 condition_mask =
           FLAG_ZERO |
@@ -1602,7 +1602,7 @@ int main(int argc, char** argv) {
         }
 
         i64 left = (i64)registers[insn.a];
-        i64 right = (i64)(i32)insn.imm;
+        i64 right = (i64)insn.imm;
 
         const u64 condition_mask =
           FLAG_ZERO |
@@ -1720,7 +1720,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("stack write failed");
         }
 
-        registers[ip_idx] = (u64)insn.imm;
+        registers[ip_idx] = insn.imm;
         continue;
       }
       

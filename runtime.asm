@@ -98,7 +98,7 @@ puts:
   mov r2, r1
 
 .loop:
-  loadb r1, r2, 0
+  load8 r1, r2, 0
   cmpi  r1, 0
   je    .done
 
@@ -153,7 +153,7 @@ getline: // (r1 = buffer, r2 = sizeof buffer) -> void
   cmpi r7, 0
   je .discard_rest
 
-  storeb r0, r6, 0
+  store8 r0, r6, 0
 
   // Echo character
   mov r1, r0
@@ -198,7 +198,7 @@ getline: // (r1 = buffer, r2 = sizeof buffer) -> void
   call putch
 
   loadi r0, 0
-  storeb r0, r6, 0
+  store8 r0, r6, 0
 
   pop r7
   pop r6
