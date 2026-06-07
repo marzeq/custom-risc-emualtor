@@ -32,24 +32,31 @@ _setup:
 
   mul r3, r0, r1
   add r4, r2, r3           // end of device list
+  jmp .find_device
 
-find_device:
+.call_main:
+  cmpi r15, 0
+  je panic
+  call main
+  halt
+
+.find_device:
   cmp r2, r4
-  jge call_main
+  jge .call_main
 
   load r5, r2, 0           // device type
   cmpi r5, 1               // 1 = stdio
-  jne next_device
+  jne .next_device
 
   // first stdio device wins
   cmpi r15, 0
-  jne next_device
+  jne .next_device
 
   load r15, r2, 8          // MMIO base address
 
-next_device:
+.next_device:
   add r2, r2, r1
-  jmp find_device
+  jmp .find_device
 
 
 getch:
@@ -71,17 +78,17 @@ putch:
 puts:
   mov r2, r1
 
-puts_loop:
+.loop:
   loadb r1, r2, 0
   cmpi  r1, 0
-  je    puts_done
+  je    .done
 
   call  putch
 
   addi  r2, r2, 1
-  jmp   puts_loop
+  jmp   .loop
 
-puts_done:
+.done:
   ret
 
 
@@ -92,13 +99,6 @@ backspace:
   loadi r1, 1
   store r1, r15, 8
   ret
-
-
-call_main:
-  cmpi r15, 0
-  je panic
-  call main
-  halt
 
 
 panic:
