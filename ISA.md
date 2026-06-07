@@ -342,6 +342,12 @@ The ISA does not mandate an ABI, but the reference runtime uses:
 * `r6`–`r13`: callee-saved registers
 * `r14-r15`: reserved
 
+## Runtime
+
+We provide a reference runtime which sets up the stack, ivt, and provides basic I/O functions for use by assembly programs before calling the `main` function.
+
+See `runtime.asm` for details.
+
 ## Notes
 
 * The assembler emits raw binary instruction streams; it does not add headers or metadata.
