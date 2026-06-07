@@ -25,9 +25,10 @@ static void terminal_raw_enable(void) {
 #define KiB(x) ((x) * 1024)
 #define MiB(x) ((x) * 1024 * 1024)
 
-#define FLAG_ZERO    (1u << 0)
-#define FLAG_LESS    (1u << 1)
-#define FLAG_GREATER (1u << 2)
+#define FLAG_ZERO       (1u << 0)
+#define FLAG_LESS       (1u << 1)
+#define FLAG_GREATER    (1u << 2)
+#define FLAG_INT_ENABLE (1u << 16)
 
 typedef struct {
   u64 version;
@@ -614,11 +615,15 @@ int main(int argc, char** argv) {
   const usz sp_idx = reserved_register_index(REG_SLOT_SP);
   const usz flags_idx = reserved_register_index(REG_SLOT_FLAGS);
   const usz machine_info_idx = reserved_register_index(REG_SLOT_MACHINE_INFO);
+  const usz ivt_idx = reserved_register_index(REG_SLOT_IVT);
 
   registers[machine_info_idx] = firmware_rom_size;
   registers[ip_idx] = 0;
   registers[sp_idx] = 0;
   registers[flags_idx] = 0;
+
+  // enable interrupts by default
+  registers[flags_idx] |= FLAG_INT_ENABLE;
 
   const u64 ram_start = machine_info.ram_start;
   const u64 ram_end   = machine_info.ram_start + machine_info.ram_size;
@@ -1054,39 +1059,59 @@ int main(int argc, char** argv) {
 
       case OP_CMP: {
         get_insn(2reg);
+
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
+
         u64 left = registers[insn.a];
         u64 right = registers[insn.b];
-        u64 flags = 0;
+
+        const u64 condition_mask =
+          FLAG_ZERO |
+          FLAG_LESS |
+          FLAG_GREATER;
+
+        u64 new_flags = registers[flags_idx] & ~condition_mask;
+
         if (left == right) {
-          flags |= FLAG_ZERO;
+          new_flags |= FLAG_ZERO;
         } else if (left < right) {
-          flags |= FLAG_LESS;
+          new_flags |= FLAG_LESS;
         } else {
-          flags |= FLAG_GREATER;
+          new_flags |= FLAG_GREATER;
         }
-        registers[flags_idx] = flags;
+
+        registers[flags_idx] = new_flags;
         break;
       }
 
       case OP_CMPI: {
         get_insn(1reg_imm);
+
         if (insn.a >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
+
         u64 left = registers[insn.a];
         u64 right = (u64)(i32)insn.imm;
-        u64 flags = 0;
+
+        const u64 condition_mask =
+          FLAG_ZERO |
+          FLAG_LESS |
+          FLAG_GREATER;
+
+        u64 new_flags = registers[flags_idx] & ~condition_mask;
+
         if (left == right) {
-          flags |= FLAG_ZERO;
+          new_flags |= FLAG_ZERO;
         } else if (left < right) {
-          flags |= FLAG_LESS;
+          new_flags |= FLAG_LESS;
         } else {
-          flags |= FLAG_GREATER;
+          new_flags |= FLAG_GREATER;
         }
-        registers[flags_idx] = flags;
+
+        registers[flags_idx] = new_flags;
         break;
       }
 
@@ -1248,27 +1273,157 @@ int main(int argc, char** argv) {
         registers[ip_idx] = return_address;
         continue;
       }
-    
-    case OP_NOP:
-      break;
 
-    case OP_DUMP_REG: {
-      get_insn(1reg);
-      if (insn.a >= register_count) {
-        RUNTIME_ERROR("invalid register operand");
+      case OP_INT: {
+        get_insn(0reg_imm);
+
+        if (insn.imm >= 256) {
+          RUNTIME_ERROR("invalid interrupt number");
+        }
+
+        if ((registers[flags_idx] & FLAG_INT_ENABLE) == 0) {
+          RUNTIME_ERROR("attempted to trigger interrupt while interrupts are disabled");
+        }
+
+        if (registers[sp_idx] < ram_start + 2 * sizeof(u64) ||
+          registers[sp_idx] > ram_end) {
+          RUNTIME_ERROR("stack overflow");
+        }
+
+        // save flags
+        registers[sp_idx] -= sizeof(u64);
+        if (!write_u64_memory(
+          registers[sp_idx],
+          firmware_rom_size,
+          machine_info_rom_size,
+          device_info_rom_size,
+          ram_size,
+          mmio_size,
+          firmware_rom,
+          &machine_info,
+          devices,
+          ram,
+          registers[flags_idx]
+        )) {
+          RUNTIME_ERROR("stack write failed");
+        }
+
+        // save return address
+        registers[sp_idx] -= sizeof(u64);
+        if (!write_u64_memory(
+          registers[sp_idx],
+          firmware_rom_size,
+          machine_info_rom_size,
+          device_info_rom_size,
+          ram_size,
+          mmio_size,
+          firmware_rom,
+          &machine_info,
+          devices,
+          ram,
+          next_ip
+        )) {
+          RUNTIME_ERROR("stack write failed");
+        }
+
+        // load interrupt handler address from ivt register
+        u64 ivt_address = registers[ivt_idx] + (insn.imm * sizeof(u64));
+        u64 handler_address;
+        if (!read_u64_memory(
+          ivt_address,
+          firmware_rom_size,
+          machine_info_rom_size,
+          device_info_rom_size,
+          ram_size,
+          mmio_size,
+          firmware_rom,
+          &machine_info,
+          devices,
+          ram,
+          &handler_address
+        )) {
+          RUNTIME_ERROR("invalid interrupt vector table address");
+        }
+
+        // disable interrupts
+        registers[flags_idx] &= ~FLAG_INT_ENABLE;
+
+        // jump to handler
+        registers[ip_idx] = handler_address;
+        continue;
       }
-      dump_register(registers, insn.a);
-      break;
-    }
+      
+      case OP_IRET: {
+        u64 return_address;
+        u64 flags;
 
-    case OP_DUMP_REGS: {
-      dump_registers(registers);
-      break;
-    }
+        if (registers[sp_idx] < ram_start + 2 * sizeof(u64) ||
+          registers[sp_idx] > ram_end) {
+          RUNTIME_ERROR("stack underflow");
+        }
 
-    default:
-      RUNTIME_ERROR("invalid opcode");
-      break;
+        // restore return address
+        if (!read_u64_memory(
+          registers[sp_idx],
+          firmware_rom_size,
+          machine_info_rom_size,
+          device_info_rom_size,
+          ram_size,
+          mmio_size,
+          firmware_rom,
+          &machine_info,
+          devices,
+          ram,
+          &return_address
+        )) {
+          RUNTIME_ERROR("stack read failed");
+        }
+        registers[sp_idx] += sizeof(u64);
+
+        // restore flags
+        if (!read_u64_memory(
+          registers[sp_idx],
+          firmware_rom_size,
+          machine_info_rom_size,
+          device_info_rom_size,
+          ram_size,
+          mmio_size,
+          firmware_rom,
+          &machine_info,
+          devices,
+          ram,
+          &flags
+        )) {
+          RUNTIME_ERROR("stack read failed");
+        }
+        registers[sp_idx] += sizeof(u64);
+        registers[flags_idx] = flags;
+
+        // jump to return address
+        registers[ip_idx] = return_address;
+        continue;
+      }
+      
+      case OP_NOP:
+        break;
+
+      case OP_DUMP_REG: {
+        get_insn(1reg);
+        if (insn.a >= register_count) {
+          RUNTIME_ERROR("invalid register operand");
+        }
+        dump_register(registers, insn.a);
+        break;
+      }
+
+      case OP_DUMP_REGS: {
+        dump_registers(registers);
+        break;
+      }
+
+      default:
+        RUNTIME_ERROR("invalid opcode");
+        break;
     }
 
     if (!ip_written) {

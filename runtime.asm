@@ -17,11 +17,26 @@ _setup:
   // r2 = ram_size
   load r2, machine_info, 24
 
+  // IVT starts after 2 MMIO addresses
+  addi r3, r1, 16
+  mov ivt, r3
+
+  // Fill all 256 vectors with panic
+  mov   r4, r3          // current IVT entry
+  loadi r5, 256         // remaining entries
+  loadi r6, panic       // default handler
+
+.init_ivt:
+  store r6, r4, 0
+  addi  r4, r4, 8
+  subi  r5, r5, 1
+  jne   .init_ivt
+
   // sp = ram_end
   add sp, r1, r2
 
   // reserve some initial stack space
-  subi sp, sp, 16
+  subi sp, sp, 64
 
   // r15 = stdio MMIO base (0 = not found)
   loadi r15, 0

@@ -17,6 +17,7 @@ static const str_view sv_ip = { 2, "ip" };
 static const str_view sv_sp = { 2, "sp" };
 static const str_view sv_flags = { 5, "flags" };
 static const str_view sv_machine_info = { 12, "machine_info" };
+static const str_view sv_ivt = { 3, "ivt" };
 
 static const str_view sv_entry = { 6, ".entry" };
 static const str_view sv_byte  = { 5, ".byte"  };
@@ -415,6 +416,11 @@ bool parse_register(str_view token, u8* value) {
     return true;
   }
 
+  if (str_view_eq_ignore_case(token, sv_ivt)) {
+    *value = (u8)reserved_register_index(REG_SLOT_IVT);
+    return true;
+  }
+
   return false;
 }
 
@@ -540,6 +546,8 @@ bool opcode_from_mnemonic(str_view token, opcode* value) {
   if (str_view_eq_ignore_case(token, str_view_from_cstr("call")))      { *value = OP_CALL; return true; }
   if (str_view_eq_ignore_case(token, str_view_from_cstr("callr")))     { *value = OP_CALLR; return true; }
   if (str_view_eq_ignore_case(token, str_view_from_cstr("ret")))       { *value = OP_RET; return true; }
+  if (str_view_eq_ignore_case(token, str_view_from_cstr("int")))       { *value = OP_INT; return true; }
+  if (str_view_eq_ignore_case(token, str_view_from_cstr("iret")))      { *value = OP_IRET; return true; }
 
   // stack
 
@@ -941,6 +949,21 @@ usz assemble_line(
     }
 
     case OP_RET: {
+      expect_no_extra(cursor, loc);
+      break;
+    }
+
+    case OP_INT: {
+      token = next_token(&cursor);
+      if (sv_empty(token) || !parse_imm_or_label(token, ctx, &imm)) {
+        error_at(loc, "expected interrupt number");
+      }
+
+      expect_no_extra(cursor, loc);
+      break;
+    }
+
+    case OP_IRET: {
       expect_no_extra(cursor, loc);
       break;
     }

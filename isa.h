@@ -83,7 +83,8 @@ typedef enum {
   REG_SLOT_SP = 1,
   REG_SLOT_FLAGS = 2,
   REG_SLOT_MACHINE_INFO = 3,
-  RESERVED_REGISTER_COUNT = 4,
+  REG_SLOT_IVT = 4,
+  RESERVED_REGISTER_COUNT = 5,
 } reserved_register_slot;
 
 typedef enum {
@@ -145,6 +146,9 @@ typedef enum {
   OP_CALLR     = 0x41,
   OP_RET       = 0x42,
 
+  OP_INT       = 0x4a, // trigger interrupt
+  OP_IRET      = 0x4b, // return from interrupt
+
   // 0x50-0x5f: stack
   OP_PUSH      = 0x50,
   OP_POP       = 0x51,
@@ -159,6 +163,7 @@ static inline instruction_type opcode_instruction_type(opcode op) {
   switch (op) {
     case OP_HALT:
     case OP_RET:
+    case OP_IRET:
     case OP_NOP:
     case OP_DUMP_REGS:
       return INSN_TYPE_0REG;
@@ -195,6 +200,7 @@ static inline instruction_type opcode_instruction_type(opcode op) {
     case OP_JG:
     case OP_JGE:
     case OP_CALL:
+    case OP_INT:
       return INSN_TYPE_0REG_IMM;
 
     case OP_LOADI:
