@@ -60,6 +60,7 @@ Four reserved registers are appended after the general-purpose set:
 * `sp`: stack pointer
 * `flags`: comparison flags
 * `machine_info`: pointer to the machine information structure
+* `ivt`: programmer written interrupt vector table pointer
 
 The assembler accepts these reserved names directly. It also accepts numeric general registers such as `r0`, `r1`, and so on.
 
@@ -205,6 +206,11 @@ Programs can enumerate devices by reading the device list.
 * `callr reg`: push the return address onto the stack and jump to the address stored in `reg`
 * `ret`: pop a return address from the stack and jump to it
 
+### Interrupts
+
+* `int imm`: trigger a software interrupt with the given immediate number
+* `iret`: return from an interrupt
+
 ### Stack
 
 * `push reg`: decrement `sp` by 8 and write the register value to memory
@@ -214,8 +220,6 @@ Programs can enumerate devices by reading the device list.
 
 * `halt`: stop execution
 * `nop`: no operation
-* `dump_reg reg`: dump a register to the console in the emulator
-* `dump_regs`: dump all registers to the console in the emulator
 
 ## Memory Model
 
