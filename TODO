@@ -5,11 +5,13 @@ Add these instructions to the instruction set:
   int imm
     Raise interrupt imm.
 
-  setivt x(imm), addr(imm)
-    Set interrupt vector table entry x to point to address addr.
-
   iret
     Return from interrupt.
+
+And this register:
+  
+  ivt
+    Interrupt Vector Table register. Holds the base address of the interrupt vector table.
 
 Interrupt behaviour:
 
