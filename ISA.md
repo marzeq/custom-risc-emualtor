@@ -323,6 +323,20 @@ loadi r2, 'A'
 loadi r3, '\n'
 ```
 
+Scoped labels prefixed with `.` relative to the previous non-scoped label are supported:
+
+```asm
+func:
+  .loop: // resolved to func.loop
+    // ... loop body
+    jmp .loop
+
+func2:
+  .loop: // resolved to func2.loop - does not conflict with previous .loop
+    // ... loop body
+    jmp .loop
+```
+
 ## Suggested ABI
 
 The ISA does not mandate an ABI, but the reference runtime uses:
