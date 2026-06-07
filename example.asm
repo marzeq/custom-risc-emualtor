@@ -24,9 +24,11 @@ main:
 
 
 getline: // (r1 = buffer, r2 = sizeof buffer) -> void
+  push r5
   push r6
   push r7
 
+  mov r5, r1          // buffer start
   mov r6, r1          // current write pointer
   mov r7, r2          // remaining buffer size
 
@@ -39,6 +41,13 @@ getline: // (r1 = buffer, r2 = sizeof buffer) -> void
 
 .read_loop:
   call getch          // r0 = char
+
+  // Backspace?
+  cmpi r0, 0x7f
+  je .handle_backspace
+
+  cmpi r0, 0x08
+  je .handle_backspace
 
   cmpi r0, '\n'
   je .finish
@@ -58,6 +67,18 @@ getline: // (r1 = buffer, r2 = sizeof buffer) -> void
 
   jmp .read_loop
 
+.handle_backspace:
+  // Already at start of buffer?
+  cmp r6, r5
+  je .read_loop
+
+  subi r6, r6, 1
+  addi r7, r7, 1
+
+  call backspace
+
+  jmp .read_loop
+
 .discard_rest:
   // Echo but don't store
   mov r1, r0
@@ -65,6 +86,7 @@ getline: // (r1 = buffer, r2 = sizeof buffer) -> void
 
 .discard_loop:
   call getch
+
   cmpi r0, '\n'
   je .finish
 
@@ -83,6 +105,7 @@ getline: // (r1 = buffer, r2 = sizeof buffer) -> void
 
   pop r7
   pop r6
+  pop r5
   ret
 
 .discard_line:
@@ -92,8 +115,8 @@ getline: // (r1 = buffer, r2 = sizeof buffer) -> void
 
   pop r7
   pop r6
+  pop r5
   ret
-
 msg:
   .ascii "What is your name? "
   .byte 0
