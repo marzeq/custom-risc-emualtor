@@ -13,7 +13,7 @@
 
 #include "isa.h"
 
-static const str_view sv_pc = { 2, "pc" };
+static const str_view sv_ip = { 2, "ip" };
 static const str_view sv_sp = { 2, "sp" };
 static const str_view sv_flags = { 5, "flags" };
 static const str_view sv_machine_info = { 12, "machine_info" };
@@ -395,8 +395,8 @@ bool parse_register(str_view token, u8* value) {
     return true;
   }
 
-  if (str_view_eq_ignore_case(token, sv_pc)) {
-    *value = (u8)reserved_register_index(REG_SLOT_PC);
+  if (str_view_eq_ignore_case(token, sv_ip)) {
+    *value = (u8)reserved_register_index(REG_SLOT_IP);
     return true;
   }
 

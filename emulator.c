@@ -473,7 +473,7 @@ static void dump_register(const u64* registers, size_t index) {
 
   char* reg_name = NULL;
 
-  if (index == reserved_register_index(REG_SLOT_PC)) {
+  if (index == reserved_register_index(REG_SLOT_IP)) {
     reg_name = "pc";
   } else if (index == reserved_register_index(REG_SLOT_SP)) {
     reg_name = "sp";
@@ -511,8 +511,8 @@ static void dump_registers(const u64* registers) {
   
   fprintf(stderr, "----------------------------\n");
 
-  fprintf(stderr, "pc           = 0x%016llx\n",
-    (unsigned long long)registers[reserved_register_index(REG_SLOT_PC)]
+  fprintf(stderr, "ip           = 0x%016llx\n",
+    (unsigned long long)registers[reserved_register_index(REG_SLOT_IP)]
   );
   fprintf(stderr, "sp           = 0x%016llx\n",
     (unsigned long long)registers[reserved_register_index(REG_SLOT_SP)]
@@ -610,13 +610,13 @@ int main(int argc, char** argv) {
   }
   memset(registers, 0, register_count * sizeof(u64));
 
-  const usz pc_idx = reserved_register_index(REG_SLOT_PC);
+  const usz ip_idx = reserved_register_index(REG_SLOT_IP);
   const usz sp_idx = reserved_register_index(REG_SLOT_SP);
   const usz flags_idx = reserved_register_index(REG_SLOT_FLAGS);
   const usz machine_info_idx = reserved_register_index(REG_SLOT_MACHINE_INFO);
 
   registers[machine_info_idx] = firmware_rom_size;
-  registers[pc_idx] = 0;
+  registers[ip_idx] = 0;
   registers[sp_idx] = 0;
   registers[flags_idx] = 0;
 
@@ -662,15 +662,15 @@ int main(int argc, char** argv) {
   terminal_raw_enable();
 
   while (true) {
-    u64 pc = registers[pc_idx];
+    u64 ip = registers[ip_idx];
 
-    instruction_type insn_type = decode_instruction_type(&firmware_rom[pc]);
-    opcode op = read_opcode(&firmware_rom[pc]);
-    u64 next_pc = pc + size_for_instruction_type(insn_type);
-    bool pc_written = false;
+    instruction_type insn_type = decode_instruction_type(&firmware_rom[ip]);
+    opcode op = read_opcode(&firmware_rom[ip]);
+    u64 next_ip = ip + size_for_instruction_type(insn_type);
+    bool ip_written = false;
 
 #define get_insn(type) \
-  instruction_##type insn = *(instruction_##type*)(&firmware_rom[pc])
+  instruction_##type insn = *(instruction_##type*)(&firmware_rom[ip])
 
     switch (op) {
       case OP_HALT:
@@ -683,7 +683,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid destination register");
         }
         registers[insn.a] = (u64)(u32)insn.imm;
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -693,7 +693,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b];
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -703,7 +703,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] + registers[insn.c];
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -713,7 +713,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] - registers[insn.c];
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -723,7 +723,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] * registers[insn.c];
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
       
@@ -736,7 +736,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("division by zero");
         }
         registers[insn.a] = registers[insn.b] / registers[insn.c];
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -746,7 +746,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] + (u64)(i32)insn.imm;
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -756,7 +756,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] - (u64)(i32)insn.imm;
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -766,7 +766,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] * (u64)(i32)insn.imm;
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -779,7 +779,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("division by zero");
         }
         registers[insn.a] = registers[insn.b] / (u64)(i32)insn.imm;
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -792,7 +792,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("division by zero");
         }
         registers[insn.a] = registers[insn.b] % registers[insn.c];
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -805,7 +805,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("division by zero");
         }
         registers[insn.a] = registers[insn.b] % (u64)(i32)insn.imm;
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -815,7 +815,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] & registers[insn.c];
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -825,7 +825,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] | registers[insn.c];
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -835,7 +835,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] ^ registers[insn.c];
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -845,7 +845,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = ~registers[insn.b];
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -855,7 +855,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] & (u64)(i32)insn.imm;
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -865,7 +865,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] | (u64)(i32)insn.imm;
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -875,7 +875,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] ^ (u64)(i32)insn.imm;
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -885,7 +885,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] + (i64)(i32)insn.imm;
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -895,7 +895,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] << (registers[insn.c] & 63u);
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -905,7 +905,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] >> (registers[insn.c] & 63u);
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -915,7 +915,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] << ((u64)(i32)insn.imm & 63u);
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -925,7 +925,7 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid register operand");
         }
         registers[insn.a] = registers[insn.b] >> ((u64)(i32)insn.imm & 63u);
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -951,7 +951,7 @@ int main(int argc, char** argv) {
         )) {
           RUNTIME_ERROR("illegal load address");
         }
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -1006,7 +1006,7 @@ int main(int argc, char** argv) {
         }
 
         registers[insn.a] = value;
-        pc_written = (insn.a == pc_idx);
+        ip_written = (insn.a == ip_idx);
         break;
       }
 
@@ -1039,7 +1039,7 @@ int main(int argc, char** argv) {
 
       case OP_JMP: {
         get_insn(0reg_imm);
-        registers[pc_idx] = (u64)insn.imm;
+        registers[ip_idx] = (u64)insn.imm;
         continue;
       }
 
@@ -1048,7 +1048,7 @@ int main(int argc, char** argv) {
         if (insn.a >= register_count) {
           RUNTIME_ERROR("invalid jump target register");
         }
-        registers[pc_idx] = registers[insn.a];
+        registers[ip_idx] = registers[insn.a];
         continue;
       }
 
@@ -1098,7 +1098,7 @@ int main(int argc, char** argv) {
       case OP_JGE: {
         get_insn(0reg_imm);
         if (jump_condition_is_met(registers[flags_idx], op)) {
-          registers[pc_idx] = (u64)insn.imm;
+          registers[ip_idx] = (u64)insn.imm;
           continue;
         }
         break;
@@ -1178,12 +1178,12 @@ int main(int argc, char** argv) {
           &machine_info,
           devices,
           ram,
-          next_pc
+          next_ip
         )) {
           RUNTIME_ERROR("stack write failed");
         }
 
-        registers[pc_idx] = (u64)insn.imm;
+        registers[ip_idx] = (u64)insn.imm;
         continue;
       }
       
@@ -1211,12 +1211,12 @@ int main(int argc, char** argv) {
           &machine_info,
           devices,
           ram,
-          next_pc
+          next_ip
         )) {
           RUNTIME_ERROR("stack write failed");
         }
 
-        registers[pc_idx] = registers[insn.a];
+        registers[ip_idx] = registers[insn.a];
         continue;
       }
 
@@ -1245,7 +1245,7 @@ int main(int argc, char** argv) {
 
         registers[sp_idx] += sizeof(u64);
 
-        registers[pc_idx] = return_address;
+        registers[ip_idx] = return_address;
         continue;
       }
     
@@ -1271,8 +1271,8 @@ int main(int argc, char** argv) {
       break;
     }
 
-    if (!pc_written) {
-      registers[pc_idx] = next_pc;
+    if (!ip_written) {
+      registers[ip_idx] = next_ip;
     }
   }
 

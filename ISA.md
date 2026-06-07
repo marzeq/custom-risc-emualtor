@@ -56,7 +56,7 @@ General-purpose registers are numbered `r0` through `r15`.
 
 Four reserved registers are appended after the general-purpose set:
 
-* `pc`: program counter
+* `ip`: instruction pointer
 * `sp`: stack pointer
 * `flags`: comparison flags
 * `machine_info`: pointer to the machine information structure
@@ -255,7 +255,7 @@ Function calls use the program stack.
 
 `call` and `callr`:
 
-1. Push the return address (`pc + 8`) onto the stack.
+1. Push the return address (`ip + 8`) onto the stack.
 2. Transfer control to the target.
 
 `ret`:

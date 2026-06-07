@@ -79,7 +79,7 @@ static inline usz size_for_instruction_type(instruction_type type) {
 #define GENERAL_REGISTER_COUNT 16
 
 typedef enum {
-  REG_SLOT_PC = 0,
+  REG_SLOT_IP = 0,
   REG_SLOT_SP = 1,
   REG_SLOT_FLAGS = 2,
   REG_SLOT_MACHINE_INFO = 3,
