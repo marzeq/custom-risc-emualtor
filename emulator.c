@@ -482,6 +482,8 @@ static void dump_register(const u64* registers, size_t index) {
     reg_name = "flags";
   } else if (index == reserved_register_index(REG_SLOT_MACHINE_INFO)) {
     reg_name = "machine_info";
+  } else if (index == reserved_register_index(REG_SLOT_IVT)) {
+    reg_name = "ivt";
   } else {
     fprintf(stderr, "r%zu = 0x%016llx (%llu)\n",
       index,
@@ -502,28 +504,9 @@ static void dump_register(const u64* registers, size_t index) {
 static void dump_registers(const u64* registers) {
   fprintf(stderr, "==== REGISTER DUMP ====\n");
 
-  for (usz i = 0; i < GENERAL_REGISTER_COUNT; i++) {
-    fprintf(stderr, "r%-2zu = 0x%016llx (%llu)\n",
-      i,
-      (unsigned long long)registers[i],
-      (unsigned long long)registers[i]
-    );
+  for (size_t i = 0; i < GENERAL_REGISTER_COUNT + RESERVED_REGISTER_COUNT; i++) {
+    dump_register(registers, i);
   }
-  
-  fprintf(stderr, "----------------------------\n");
-
-  fprintf(stderr, "ip           = 0x%016llx\n",
-    (unsigned long long)registers[reserved_register_index(REG_SLOT_IP)]
-  );
-  fprintf(stderr, "sp           = 0x%016llx\n",
-    (unsigned long long)registers[reserved_register_index(REG_SLOT_SP)]
-  );
-  fprintf(stderr, "flags        = 0x%016llx\n",
-    (unsigned long long)registers[reserved_register_index(REG_SLOT_FLAGS)]
-  );
-  fprintf(stderr, "machine_info = 0x%016llx\n",
-    (unsigned long long)registers[reserved_register_index(REG_SLOT_MACHINE_INFO)]
-  );
 }
 
 #define RUNTIME_ERROR(error)                       \
@@ -1281,6 +1264,11 @@ int main(int argc, char** argv) {
           RUNTIME_ERROR("invalid interrupt number");
         }
 
+        if (insn.imm == DUMP_REGS_INT_CODE) {
+          dump_registers(registers);
+          break;
+        }
+
         if ((registers[flags_idx] & FLAG_INT_ENABLE) == 0) {
           RUNTIME_ERROR("attempted to trigger interrupt while interrupts are disabled");
         }
@@ -1406,20 +1394,6 @@ int main(int argc, char** argv) {
       
       case OP_NOP:
         break;
-
-      case OP_DUMP_REG: {
-        get_insn(1reg);
-        if (insn.a >= register_count) {
-          RUNTIME_ERROR("invalid register operand");
-        }
-        dump_register(registers, insn.a);
-        break;
-      }
-
-      case OP_DUMP_REGS: {
-        dump_registers(registers);
-        break;
-      }
 
       default:
         RUNTIME_ERROR("invalid opcode");

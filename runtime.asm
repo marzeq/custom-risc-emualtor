@@ -61,13 +61,17 @@ _setup:
 
   load r5, r2, 0           // device type
   cmpi r5, 1               // 1 = stdio
-  jne .next_device
+  je .stdio_device
 
+  jmp .next_device
+
+.stdio_device:
   // first stdio device wins
   cmpi r15, 0
   jne .next_device
 
   load r15, r2, 8          // MMIO base address
+  jmp .next_device
 
 .next_device:
   add r2, r2, r1
@@ -117,5 +121,5 @@ backspace:
 
 
 panic:
-  dump_regs
+  int 0xff
   halt

@@ -557,8 +557,6 @@ bool opcode_from_mnemonic(str_view token, opcode* value) {
   // misc
 
   if (str_view_eq_ignore_case(token, str_view_from_cstr("nop")))       { *value = OP_NOP; return true; }
-  if (str_view_eq_ignore_case(token, str_view_from_cstr("dump_reg")))  { *value = OP_DUMP_REG; return true; }
-  if (str_view_eq_ignore_case(token, str_view_from_cstr("dump_regs"))) { *value = OP_DUMP_REGS; return true; }
 
   return false;
 }
@@ -980,21 +978,6 @@ usz assemble_line(
     }
 
     case OP_NOP: {
-      expect_no_extra(cursor, loc);
-      break;
-    }
-
-    case OP_DUMP_REG: {
-      token = next_token(&cursor);
-      if (sv_empty(token) || !parse_register(token, &a)) {
-        error_at(loc, "expected register operand");
-      }
-
-      expect_no_extra(cursor, loc);
-      break;
-    }
-
-    case OP_DUMP_REGS: {
       expect_no_extra(cursor, loc);
       break;
     }

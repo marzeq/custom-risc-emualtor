@@ -155,9 +155,9 @@ typedef enum {
 
   // 0xf0 - 0xff: reserved for special purposes
   OP_NOP       = 0xf0,
-  OP_DUMP_REG  = 0xf3, // trigger a dump of specified register in emulator
-  OP_DUMP_REGS = 0xf4, // trigger a dump of all registers in emulator
 } opcode;
+
+#define DUMP_REGS_INT_CODE 0xff
 
 static inline instruction_type opcode_instruction_type(opcode op) {
   switch (op) {
@@ -165,14 +165,12 @@ static inline instruction_type opcode_instruction_type(opcode op) {
     case OP_RET:
     case OP_IRET:
     case OP_NOP:
-    case OP_DUMP_REGS:
       return INSN_TYPE_0REG;
 
     case OP_JMPR:
     case OP_CALLR:
     case OP_PUSH:
     case OP_POP:
-    case OP_DUMP_REG:
       return INSN_TYPE_1REG;
 
     case OP_MOV:
