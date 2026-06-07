@@ -54,15 +54,15 @@ based on the number of register operands and whether there is an immediate opera
 
 General-purpose registers are numbered `r0` through `r15`.
 
-Four reserved registers are appended after the general-purpose set:
+These reserved registers are included in addition to the general-purpose registers:
 
 * `ip`: instruction pointer
 * `sp`: stack pointer
 * `flags`: comparison flags
-* `machine_info`: pointer to the machine information structure
+* `machine_info`: pointer to the machine information structure (read-only)
 * `ivt`: programmer written interrupt vector table pointer
 
-The assembler accepts these reserved names directly. It also accepts numeric general registers such as `r0`, `r1`, and so on.
+The assembler accepts these reserved names directly.
 
 ## Flags
 
@@ -126,10 +126,6 @@ Fields:
 * `start`: first byte of the device's MMIO region
 * `size`: size of the MMIO region in bytes
 * `name`: null-terminated ASCII string describing the device
-
-The machine information structure contains both the number of devices and the address of the device descriptor list.
-
-Programs can enumerate devices by reading the device list.
 
 ## Opcodes
 
@@ -223,20 +219,7 @@ Programs can enumerate devices by reading the device list.
 
 ## Memory Model
 
-The architecture exposes a single byte-addressed address space containing ROM, MMIO devices, and RAM.
-
-The address space layout is:
-```text
-Firmware ROM
-Machine Information ROM
-Device Information ROM
-RAM
-MMIO Regions
-```
-
-Programs must discover RAM and devices through the machine information structure rather than assuming fixed addresses.
-
-All addresses are byte offsets within the address space.
+Apart from the first instruction fetch being `0x00...`, there are no fixed memory mappings. Programs can use the `machine_info` structure to discover where RAM and ROM are located.
 
 ## Stack Initialization
 
@@ -363,4 +346,3 @@ The ISA does not mandate an ABI, but the reference runtime uses:
 
 * The assembler emits raw binary instruction streams; it does not add headers or metadata.
 * The assembler accepts `-` as the output path to write the binary to stdout.
-* All jump, call, and return targets must resolve to valid instruction boundaries.
