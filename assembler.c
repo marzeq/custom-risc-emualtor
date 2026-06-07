@@ -494,6 +494,10 @@ bool opcode_from_mnemonic(str_view token, opcode* value) {
   if (str_view_eq_ignore_case(token, str_view_from_cstr("lea")))       { *value = OP_LEA; return true; }
   if (str_view_eq_ignore_case(token, str_view_from_cstr("load8")))     { *value = OP_LOAD8; return true; }
   if (str_view_eq_ignore_case(token, str_view_from_cstr("store8")))    { *value = OP_STORE8; return true; }
+  if (str_view_eq_ignore_case(token, str_view_from_cstr("load16")))    { *value = OP_LOAD16; return true; }
+  if (str_view_eq_ignore_case(token, str_view_from_cstr("store16")))   { *value = OP_STORE16; return true; }
+  if (str_view_eq_ignore_case(token, str_view_from_cstr("load32")))    { *value = OP_LOAD32; return true; }
+  if (str_view_eq_ignore_case(token, str_view_from_cstr("store32")))   { *value = OP_STORE32; return true; }
 
   // arithmetic
 
@@ -760,6 +764,10 @@ usz assemble_line(
     case OP_STORE:
     case OP_LOAD8:
     case OP_STORE8:
+    case OP_LOAD16:
+    case OP_STORE16:
+    case OP_LOAD32:
+    case OP_STORE32:
     case OP_LEA: {
       token = next_token(&cursor);
       if (sv_empty(token) || !parse_register(token, &a)) {

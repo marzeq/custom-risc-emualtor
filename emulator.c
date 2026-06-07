@@ -99,6 +99,30 @@ static void write_u64_le(u8* bytes, u64 value) {
   bytes[7] = (u8)((value >> 56) & 0xFFu);
 }
 
+static u32 read_u32_le(const u8* bytes) {
+  return (u32)bytes[0]
+    | ((u32)bytes[1] << 8)
+    | ((u32)bytes[2] << 16)
+    | ((u32)bytes[3] << 24);
+}
+
+static void write_u32_le(u8* bytes, u32 value) {
+  bytes[0] = (u8)(value & 0xFFu);
+  bytes[1] = (u8)((value >> 8) & 0xFFu);
+  bytes[2] = (u8)((value >> 16) & 0xFFu);
+  bytes[3] = (u8)((value >> 24) & 0xFFu);
+}
+
+static u16 read_u16_le(const u8* bytes) {
+  return (u16)bytes[0]
+    | ((u16)bytes[1] << 8);
+}
+
+static void write_u16_le(u8* bytes, u16 value) {
+  bytes[0] = (u8)(value & 0xFFu);
+  bytes[1] = (u8)((value >> 8) & 0xFFu);
+}
+
 static u8 read_u8(const u8* p) {
   return *p;
 }
@@ -236,213 +260,132 @@ static bool mmio_write(
   }
 }
 
-static bool read_u64_memory(
-  u64 address,
-  u64 firmware_rom_size,
-  u64 machine_info_rom_size,
-  u64 device_info_rom_size,
-  u64 ram_size,
-  u64 mmio_size,
-  u8* firmware_rom,
-  machine_info* machine_info,
-  device_info* devices,
-  u8* ram,
-  u64* out_value
-) {
-  memory_region region = get_memory_region_type(
-    address,
-    firmware_rom_size,
-    machine_info_rom_size,
-    device_info_rom_size,
-    ram_size,
-    mmio_size
-  );
-
-  switch (region) {
-    case FIRMWARE_ROM:
-      *out_value = read_u64_le(&firmware_rom[address]);
-      return true;
-
-    case MACHINE_INFO_ROM: {
-      if (address + sizeof(*machine_info) > firmware_rom_size + machine_info_rom_size) {
-        *out_value = 0;
-      } else {
-        *out_value = read_u64_le((u8*)machine_info + (address - firmware_rom_size));
-      }
-      return true;
-    }
-
-    case DEVICE_INFO_ROM: {
-      u64 device_info_offset = address - firmware_rom_size - machine_info_rom_size;
-      if (device_info_offset + sizeof(device_info) > device_info_rom_size) {
-        *out_value = 0;
-      } else {
-        *out_value = read_u64_le((u8*)devices + device_info_offset);
-      }
-      return true;
-    }
-
-    case RAM:
-      *out_value = read_u64_le(&ram[address - machine_info->ram_start]);
-      return true;
-
-    case MMIO:
-      return mmio_read(devices, machine_info->device_count, address, out_value);
-  }
-
-  return false;
+#define DEFINE_MEMORY_READ(bits, type, read_fn)               \
+static bool read_u##bits##_memory(                            \
+  u64 address,                                                \
+  u64 firmware_rom_size,                                      \
+  u64 machine_info_rom_size,                                  \
+  u64 device_info_rom_size,                                   \
+  u64 ram_size,                                               \
+  u64 mmio_size,                                              \
+  u8* firmware_rom,                                           \
+  machine_info* machine_info,                                 \
+  device_info* devices,                                       \
+  u8* ram,                                                    \
+  type* out_value                                             \
+) {                                                           \
+  memory_region region = get_memory_region_type(              \
+    address,                                                  \
+    firmware_rom_size,                                        \
+    machine_info_rom_size,                                    \
+    device_info_rom_size,                                     \
+    ram_size,                                                 \
+    mmio_size                                                 \
+  );                                                          \
+                                                              \
+  switch (region) {                                           \
+    case FIRMWARE_ROM:                                        \
+      *out_value = read_fn(&firmware_rom[address]);           \
+      return true;                                            \
+                                                              \
+    case MACHINE_INFO_ROM:                                    \
+      *out_value = read_fn(                                   \
+        (u8*)machine_info + (address - firmware_rom_size)     \
+      );                                                      \
+      return true;                                            \
+                                                              \
+    case DEVICE_INFO_ROM:                                     \
+      *out_value = read_fn(                                   \
+        (u8*)devices +                                        \
+        (address - firmware_rom_size - machine_info_rom_size) \
+      );                                                      \
+      return true;                                            \
+                                                              \
+    case RAM:                                                 \
+      *out_value = read_fn(                                   \
+        &ram[address - machine_info->ram_start]               \
+      );                                                      \
+      return true;                                            \
+                                                              \
+    case MMIO: {                                              \
+      u64 value;                                              \
+                                                              \
+      if (!mmio_read(                                         \
+        devices,                                              \
+        machine_info->device_count,                           \
+        address,                                              \
+        &value                                                \
+      )) {                                                    \
+        return false;                                         \
+      }                                                       \
+                                                              \
+      *out_value = (type)value;                               \
+      return true;                                            \
+    }                                                         \
+  }                                                           \
+                                                              \
+  return false;                                               \
 }
 
-static bool write_u64_memory(
-  u64 address,
-  u64 firmware_rom_size,
-  u64 machine_info_rom_size,
-  u64 device_info_rom_size,
-  u64 ram_size,
-  u64 mmio_size,
-  u8* firmware_rom,
-  machine_info* machine_info,
-  device_info* devices,
-  u8* ram,
-  u64 value
-) {
-  (void)firmware_rom;
-  (void)devices;
-  memory_region region = get_memory_region_type(
-    address,
-    firmware_rom_size,
-    machine_info_rom_size,
-    device_info_rom_size,
-    ram_size,
-    mmio_size
-  );
-
-  switch (region) {
-    case RAM:
-      write_u64_le(&ram[address - machine_info->ram_start], value);
-      return true;
-
-    case MMIO:
-      return mmio_write(devices, machine_info->device_count, address, value);
-
-    case FIRMWARE_ROM:
-    case MACHINE_INFO_ROM:
-    case DEVICE_INFO_ROM:
-      return false;
-  }
-
-  return false;
+#define DEFINE_MEMORY_WRITE(bits, type, write_fn) \
+static bool write_u##bits##_memory(               \
+  u64 address,                                    \
+  u64 firmware_rom_size,                          \
+  u64 machine_info_rom_size,                      \
+  u64 device_info_rom_size,                       \
+  u64 ram_size,                                   \
+  u64 mmio_size,                                  \
+  u8* firmware_rom,                               \
+  machine_info* machine_info,                     \
+  device_info* devices,                           \
+  u8* ram,                                        \
+  type value                                      \
+) {                                               \
+  (void)firmware_rom;                             \
+                                                  \
+  memory_region region = get_memory_region_type(  \
+    address,                                      \
+    firmware_rom_size,                            \
+    machine_info_rom_size,                        \
+    device_info_rom_size,                         \
+    ram_size,                                     \
+    mmio_size                                     \
+  );                                              \
+                                                  \
+  switch (region) {                               \
+    case RAM:                                     \
+      write_fn(                                   \
+        &ram[address - machine_info->ram_start],  \
+        value                                     \
+      );                                          \
+      return true;                                \
+                                                  \
+    case MMIO:                                    \
+      return mmio_write(                          \
+        devices,                                  \
+        machine_info->device_count,               \
+        address,                                  \
+        value                                     \
+      );                                          \
+                                                  \
+    case FIRMWARE_ROM:                            \
+    case MACHINE_INFO_ROM:                        \
+    case DEVICE_INFO_ROM:                         \
+      return false;                               \
+  }                                               \
+                                                  \
+  return false;                                   \
 }
 
-static bool read_u8_memory(
-  u64 address,
-  u64 firmware_rom_size,
-  u64 machine_info_rom_size,
-  u64 device_info_rom_size,
-  u64 ram_size,
-  u64 mmio_size,
-  u8* firmware_rom,
-  machine_info* machine_info,
-  device_info* devices,
-  u8* ram,
-  u8* out_value
-) {
-  memory_region region = get_memory_region_type(
-    address,
-    firmware_rom_size,
-    machine_info_rom_size,
-    device_info_rom_size,
-    ram_size,
-    mmio_size
-  );
+DEFINE_MEMORY_READ(64, u64, read_u64_le)
+DEFINE_MEMORY_READ(32, u32, read_u32_le)
+DEFINE_MEMORY_READ(16, u16, read_u16_le)
+DEFINE_MEMORY_READ(8, u8, read_u8)
 
-  switch (region) {
-    case FIRMWARE_ROM:
-      *out_value = read_u8(&firmware_rom[address]);
-      return true;
-
-    case MACHINE_INFO_ROM: {
-      if (address >= firmware_rom_size + machine_info_rom_size) {
-        *out_value = 0;
-      } else {
-        *out_value = read_u8((u8*)machine_info + (address - firmware_rom_size));
-      }
-      return true;
-    }
-
-    case DEVICE_INFO_ROM: {
-      u64 offset = address - firmware_rom_size - machine_info_rom_size;
-
-      if (offset >= device_info_rom_size) {
-        *out_value = 0;
-      } else {
-        *out_value = read_u8((u8*)devices + offset);
-      }
-
-      return true;
-    }
-
-    case RAM:
-      *out_value = read_u8(&ram[address - machine_info->ram_start]);
-      return true;
-
-    case MMIO: {
-      u64 value;
-
-      if (!mmio_read(devices, machine_info->device_count, address, &value)) {
-        return false;
-      }
-
-      *out_value = (u8)value;
-      return true;
-    }
-
-    default:
-      return false;
-  }
-}
-
-static bool write_u8_memory(
-  u64 address,
-  u64 firmware_rom_size,
-  u64 machine_info_rom_size,
-  u64 device_info_rom_size,
-  u64 ram_size,
-  u64 mmio_size,
-  u8* firmware_rom,
-  machine_info* machine_info,
-  device_info* devices,
-  u8* ram,
-  u8 value
-) {
-  (void)firmware_rom;
-
-  memory_region region = get_memory_region_type(
-    address,
-    firmware_rom_size,
-    machine_info_rom_size,
-    device_info_rom_size,
-    ram_size,
-    mmio_size
-  );
-
-  switch (region) {
-    case RAM:
-      write_u8(&ram[address - machine_info->ram_start], value);
-      return true;
-
-    case MMIO:
-      return mmio_write(devices, machine_info->device_count, address, value);
-
-    case FIRMWARE_ROM:
-    case MACHINE_INFO_ROM:
-    case DEVICE_INFO_ROM:
-      return false;
-
-    default:
-      return false;
-  }
-}
+DEFINE_MEMORY_WRITE(64, u64, write_u64_le)
+DEFINE_MEMORY_WRITE(32, u32, write_u32_le)
+DEFINE_MEMORY_WRITE(16, u16, write_u16_le)
+DEFINE_MEMORY_WRITE(8, u8, write_u8)
 
 static inline opcode read_opcode(const u8* bytes) {
   return (opcode)bytes[0];
@@ -1432,6 +1375,120 @@ int main(int argc, char** argv) {
         )) {
           RUNTIME_ERROR("illegal store address");
         }
+        break;
+      }
+
+      case OP_LOAD32: {
+        get_insn(2reg_imm);
+        if (insn.a >= register_count || insn.b >= register_count) {
+          RUNTIME_ERROR("invalid register operand");
+        }
+
+        u32 value;
+        u64 address = registers[insn.b] + insn.imm;
+
+        if (!read_u32_memory(
+          address,
+          firmware_rom_size,
+          machine_info_rom_size,
+          device_info_rom_size,
+          ram_size,
+          mmio_size,
+          firmware_rom,
+          &machine_info,
+          devices,
+          ram,
+          &value
+        )) {
+          RUNTIME_ERROR("illegal load address");
+        }
+
+        registers[insn.a] = value;
+        ip_written = (insn.a == ip_idx);
+        break;
+      }
+
+      case OP_STORE32: {
+        get_insn(2reg_imm);
+        if (insn.a >= register_count || insn.b >= register_count) {
+          RUNTIME_ERROR("invalid register operand");
+        }
+
+        u64 address = registers[insn.b] + insn.imm;
+
+        if (!write_u32_memory(
+          address,
+          firmware_rom_size,
+          machine_info_rom_size,
+          device_info_rom_size,
+          ram_size,
+          mmio_size,
+          firmware_rom,
+          &machine_info,
+          devices,
+          ram,
+          (u32)registers[insn.a]
+        )) {
+          RUNTIME_ERROR("illegal store address");
+        }
+
+        break;
+      }
+
+      case OP_LOAD16: {
+        get_insn(2reg_imm);
+        if (insn.a >= register_count || insn.b >= register_count) {
+          RUNTIME_ERROR("invalid register operand");
+        }
+
+        u16 value;
+        u64 address = registers[insn.b] + insn.imm;
+
+        if (!read_u16_memory(
+          address,
+          firmware_rom_size,
+          machine_info_rom_size,
+          device_info_rom_size,
+          ram_size,
+          mmio_size,
+          firmware_rom,
+          &machine_info,
+          devices,
+          ram,
+          &value
+        )) {
+          RUNTIME_ERROR("illegal load address");
+        }
+
+        registers[insn.a] = value;
+        ip_written = (insn.a == ip_idx);
+        break;
+      }
+
+      case OP_STORE16: {
+        get_insn(2reg_imm);
+        if (insn.a >= register_count || insn.b >= register_count) {
+          RUNTIME_ERROR("invalid register operand");
+        }
+
+        u64 address = registers[insn.b] + insn.imm;
+
+        if (!write_u16_memory(
+          address,
+          firmware_rom_size,
+          machine_info_rom_size,
+          device_info_rom_size,
+          ram_size,
+          mmio_size,
+          firmware_rom,
+          &machine_info,
+          devices,
+          ram,
+          (u16)registers[insn.a]
+        )) {
+          RUNTIME_ERROR("illegal store address");
+        }
+
         break;
       }
 

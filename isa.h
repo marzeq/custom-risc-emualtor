@@ -97,6 +97,10 @@ typedef enum {
   OP_LEA       = 0x05,
   OP_LOAD8     = 0x06,
   OP_STORE8    = 0x07,
+  OP_LOAD16    = 0x08,
+  OP_STORE16   = 0x09,
+  OP_LOAD32    = 0x0a,
+  OP_STORE32   = 0x0b,
 
   // 0x10-0x1f: arithmetic
   OP_ADD       = 0x10,
@@ -247,6 +251,10 @@ static inline instruction_type opcode_instruction_type(opcode op) {
     case OP_LEA:
     case OP_LOAD8:
     case OP_STORE8:
+    case OP_LOAD16:
+    case OP_STORE16:
+    case OP_LOAD32:
+    case OP_STORE32:
     case OP_ADDI:
     case OP_SUBI:
     case OP_MULI:

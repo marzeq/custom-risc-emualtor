@@ -138,8 +138,12 @@ Fields:
 * `load dst, base, imm`: load a 64-bit value from memory at `base + imm`
 * `store src, base, imm`: store a 64-bit value to memory at `base + imm`
 * `lea dst, base, imm`: compute `base + imm` and store the result in `dst`
-* `loadb dst, base, imm`: load a byte from memory at `base + imm` and zero-extend it to 64 bits
-* `storeb src, base, imm`: store the least significant byte of `src` to memory at `base + imm`
+* `load8 dst, base, imm`: load a byte from memory at `base + imm` and zero-extend it to 64 bits
+* `store8 src, base, imm`: store the least significant byte of `src` to memory at `base + imm`
+* `load16 dst, base, imm`: load a 16-bit value from memory at `base + imm` and zero-extend it to 64 bits
+* `store16 src, base, imm`: load the least significant 16 bits of `src` to memory at `base + imm`
+* `load32 dst, base, imm`: load a 32-bit value from memory at `base + imm` and zero-extend it to 64 bits
+* `store32 src, base, imm`: load the least significant 32 bits of `src` to memory at `base + imm`
 
 ### Arithmetic
 
