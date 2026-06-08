@@ -1,5 +1,5 @@
 cc := clang
-cflags := -Wall -Wextra -Werror -std=c23 -Wswitch-enum -g
+cflags := -Wall -Wextra -Werror -std=c23 -Wswitch-enum
 
 all: emulator asm
 
