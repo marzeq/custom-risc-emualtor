@@ -53,6 +53,8 @@ typedef struct [[gnu::packed]] {
   u64 imm;
 } instruction_2reg_imm;
 
+#define MAX_INSN_SIZE sizeof(instruction_2reg_imm)
+
 typedef enum {
   INSN_TYPE_0REG,
   INSN_TYPE_1REG,

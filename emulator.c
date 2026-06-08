@@ -628,13 +628,33 @@ int main(int argc, char** argv) {
   while (true) {
     u64 ip = registers[ip_idx];
 
-    instruction_type insn_type = decode_instruction_type(&firmware_rom[ip]);
-    opcode op = read_opcode(&firmware_rom[ip]);
+    u8 insn_buf[MAX_INSN_SIZE];
+
+    for (usz i = 0; i < MAX_INSN_SIZE; i++) {
+      if (!read_u8_memory(
+        ip + i,
+        firmware_rom_size,
+        machine_info_rom_size,
+        device_info_rom_size,
+        ram_size,
+        mmio_size,
+        firmware_rom,
+        &machine_info,
+        devices,
+        ram,
+        &insn_buf[i]
+      )) {
+        RUNTIME_ERROR("invalid instruction fetch");
+      }
+    }
+
+    instruction_type insn_type = decode_instruction_type(insn_buf);
+    opcode op = read_opcode(insn_buf);
     u64 next_ip = ip + size_for_instruction_type(insn_type);
     bool ip_written = false;
 
 #define get_insn(type) \
-  instruction_##type insn = *(instruction_##type*)(&firmware_rom[ip])
+  instruction_##type insn = *(instruction_##type*)(insn_buf)
 
     switch (op) {
       case OP_HALT:
