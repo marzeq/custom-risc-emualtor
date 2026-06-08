@@ -30,6 +30,7 @@ _setup:
   store r6, r4, 0
   addi  r4, r4, 8
   subi  r5, r5, 1
+  cmpi  r5, 0
   jne   .init_ivt
 
   // sp = ram_end
@@ -78,7 +79,7 @@ _setup:
   jmp .find_device
 
 
-getch:
+getch: // (void) -> r0 = char or 0 if no input
   cmpi r15, 0
   je panic
 
@@ -86,7 +87,7 @@ getch:
   ret
 
 
-putch:
+putch: // (r1 = char) -> void
   cmpi r15, 0
   je panic
 
@@ -94,7 +95,7 @@ putch:
   ret
 
 
-puts:
+puts: // (r1 = str) -> void
   mov r2, r1
 
 .loop:
@@ -111,7 +112,7 @@ puts:
   ret
 
 
-backspace:
+backspace: // (void) -> void
   cmpi r15, 0
   je panic
 
@@ -215,6 +216,21 @@ getline: // (r1 = buffer, r2 = sizeof buffer) -> void
   pop r5
   ret
 
+
+strlen: // (r1 = str) -> r0 = length
+  mov r2, r1
+
+.loop:
+  load8 r3, r2, 0
+  cmpi r3, 0
+  je .done
+
+  addi r2, r2, 1
+  jmp .loop
+
+.done:
+  sub r0, r2, r1
+  ret
 
 
 panic:

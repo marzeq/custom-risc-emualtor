@@ -1,13 +1,15 @@
 #include "runtime.asm"
 
+#define NAME_BUF_SIZE 32
+
 main:
   loadi r1, msg
   call puts
 
-  subi sp, sp, 32
+  subi sp, sp, NAME_BUF_SIZE
 
   mov r1, sp
-  loadi r2, 32
+  loadi r2, NAME_BUF_SIZE
   call getline
 
   loadi r1, response_1
@@ -19,7 +21,7 @@ main:
   loadi r1, response_2
   call puts
 
-  addi sp, sp, 32
+  addi sp, sp, NAME_BUF_SIZE
   ret
 
 msg:
