@@ -177,7 +177,7 @@ getline: // (r1 = buffer, r2 = sizeof buffer) -> void
   jmp .read_loop
 
 .discard_rest:
-  // Echo but don't store
+  // Echo but dont store
   mov r1, r0
   call putch
 
