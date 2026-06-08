@@ -66,7 +66,7 @@ The assembler accepts these reserved names directly.
 
 ## Machine Information
 
-At startup the `machine_info` register contains the address of a machine information structure located in ROM.
+At startup the `machine_info` register contains the address of a machine information structure.
 
 ```c
 typedef struct {
@@ -91,8 +91,8 @@ Fields:
 * `self_size`: size of the machine information structure in bytes
 * `ram_start`: first byte of writable RAM
 * `ram_size`: size of writable RAM in bytes
-* `firmware_rom_start`: first byte of firmware ROM
-* `firmware_rom_size`: size of firmware ROM in bytes
+* `firmware_rom_start`: first byte of the firmware
+* `firmware_rom_size`: size of the firmware in bytes
 * `device_count`: number of devices in the device list
 * `device_size`: size of each device descriptor in bytes
 * `device_list`: address of the first device descriptor
@@ -121,7 +121,7 @@ Fields:
 
 ### Data Movement
 
-* `loadi dst, imm`: load a 64-bit immediate into the low bits of `dst` and zero-extend to 64 bits
+* `loadi dst, imm`: load a 64-bit immediate into the low bits of `dst`
 * `mov dst, src`: copy a register
 * `load dst, base, imm`: load a 64-bit value from memory at `base + imm`
 * `store src, base, imm`: store a 64-bit value to memory at `base + imm`
@@ -132,6 +132,8 @@ Fields:
 * `store16 src, base, imm`: load the least significant 16 bits of `src` to memory at `base + imm`
 * `load32 dst, base, imm`: load a 32-bit value from memory at `base + imm` and zero-extend it to 64 bits
 * `store32 src, base, imm`: load the least significant 32 bits of `src` to memory at `base + imm`
+
+All memory accesses may be performed at arbitrary byte addresses. Alignment is not required.
 
 ### Arithmetic
 
@@ -163,6 +165,15 @@ Fields:
 * `modis dst, src, imm`: signed integer remainder with immediate
 * `mulhis dst, src, imm`: high 64 bits of the 128-bit
 
+#### Important
+
+Arithmetic instructions do not update comparison flags, only the arithmetic `carry` and `overflow` flags.
+Checking for equality or ordering should be done with the comparison instructions described later.
+
+* `carry` = last bit shifted out
+* `shr`/`sar`: overflow always cleared
+* `shl`: `overflow` set when the sign bit changes during a non-zero shift
+
 ### Bitwise
 
 * `and dst, lhs, rhs`: bitwise and
@@ -188,12 +199,22 @@ Fields:
 * `shri dst, src, imm`: shift right by `imm & 63`
 * `sari dst, src, imm`: arithmetic shift right by `imm & 63`
 
+#### Important
+
+Shift instructions do not update comparison flags, only the arithmetic `carry` and `overflow` flags.
+Checking for equality or ordering should be done with the comparison instructions described later.
+
 ### Comparison
 
 * `cmp lhs, rhs`: compare two registers and update `flags`
 * `cmpi lhs, imm`: compare a register against an immediate and update `flags`
 * `cmps lhs, rhs`: signed compare two registers and update `flags`
 * `cmpsi lhs, imm`: signed compare a register against an immediate and update `flags`
+
+#### Important
+
+Comparison instructions do not update arithmetic flags, only the comparison flags `zero`, `greater` and `less`.
+Checking for overflow or carry should be done with the arithmetic instructions described earlier.
 
 ### Control Flow
 
@@ -243,7 +264,7 @@ Fields:
 
 ## Memory Model
 
-Apart from the first instruction fetch being `0x00...`, there are no fixed memory mappings. Programs can use the `machine_info` structure to discover where RAM and ROM are located.
+Apart from the first instruction fetch being `0x00...`, there are no fixed memory mappings. Programs can use the `machine_info` structure to discover where free-to-use RAM is located.
 
 ## Stack Initialization
 
@@ -296,6 +317,29 @@ Function pointers can be invoked with `callr`:
 loadi r0, hello
 callr r0
 ```
+
+## Interrupts
+
+After an `int` instruction, the CPU will look up the handler for the given interrupt number in the interrupt vector table pointed to by `ivt` and jump to it.
+
+Additionally, the return address and current flags state will be saved to the stack so that the handler can return with `iret` in this order:
+
+```
+SP -> return_address
+      saved_flags
+```
+
+and the flag `int_enable` will be unset in the flags register to disable further interrupts until the handler finishes.
+
+If an interrupt is triggered while `int_enable` is unset, the CPU will panic and halt.
+
+On machine startup `int_enable` is set, but the contents of `ivt` are undefined. The program must initialize `ivt` before triggering any interrupts.
+
+### Emulator-only interrupts
+
+For the purpose of testing, the emulator will hijack these interrupt numbers and provide additional functionality:
+
+* `0xff` - dump all register values to the console (for debugging)
 
 ## Assembler Syntax
 

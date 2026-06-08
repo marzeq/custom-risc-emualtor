@@ -1058,7 +1058,7 @@ int main(int argc, char** argv) {
         if ((i64)insn.imm == 0) {
           RUNTIME_ERROR("division by zero");
         }
-        i64 result = (i64)registers[insn.b] % (i64)(i32)insn.imm;
+        i64 result = (i64)registers[insn.b] % (i64)insn.imm;
 
         registers[insn.a] = (u64)result;
 
@@ -1116,7 +1116,7 @@ int main(int argc, char** argv) {
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
-        registers[insn.a] = registers[insn.b] & (u64)(i32)insn.imm;
+        registers[insn.a] = registers[insn.b] & insn.imm;
         ip_written = (insn.a == ip_idx);
         break;
       }
@@ -1126,7 +1126,7 @@ int main(int argc, char** argv) {
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
-        registers[insn.a] = registers[insn.b] | (u64)(i32)insn.imm;
+        registers[insn.a] = registers[insn.b] | insn.imm;
         ip_written = (insn.a == ip_idx);
         break;
       }
@@ -1136,7 +1136,7 @@ int main(int argc, char** argv) {
         if (insn.a >= register_count || insn.b >= register_count) {
           RUNTIME_ERROR("invalid register operand");
         }
-        registers[insn.a] = registers[insn.b] ^ (u64)(i32)insn.imm;
+        registers[insn.a] = registers[insn.b] ^ insn.imm;
         ip_written = (insn.a == ip_idx);
         break;
       }
@@ -1164,13 +1164,16 @@ int main(int argc, char** argv) {
         bool carry =
           shift != 0 &&
           ((value >> (64 - shift)) & 1);
+        bool overflow =
+          shift != 0 &&
+          ((value >> 63) != (result >> 63));
 
         registers[insn.a] = result;
 
         set_arithmetic_flags(
           &registers[flags_idx],
           carry,
-          false
+          overflow
         );
         ip_written = (insn.a == ip_idx);
         break;
@@ -1189,13 +1192,14 @@ int main(int argc, char** argv) {
         bool carry =
           shift != 0 &&
           ((value >> (shift - 1)) & 1);
+        bool overflow = false;
 
         registers[insn.a] = result;
 
         set_arithmetic_flags(
           &registers[flags_idx],
           carry,
-          false
+          overflow
         );
         ip_written = (insn.a == ip_idx);
         break;
@@ -1216,26 +1220,15 @@ int main(int argc, char** argv) {
         bool carry =
           shift != 0 &&
           ((value >> (shift - 1)) & 1u);
+        bool overflow = false;
 
         registers[insn.a] = result;
 
-        const u64 flag_mask =
-          FLAG_ZERO |
-          FLAG_CARRY |
-          FLAG_OVERFLOW;
-
-        u64 new_flags = registers[flags_idx] & ~flag_mask;
-
-        if (result == 0) {
-          new_flags |= FLAG_ZERO;
-        }
-
-        if (carry) {
-          new_flags |= FLAG_CARRY;
-        }
-
-        registers[flags_idx] = new_flags;
-
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          carry,
+          overflow
+        );
         ip_written = (insn.a == ip_idx);
         break;
       }
@@ -1253,13 +1246,16 @@ int main(int argc, char** argv) {
         bool carry =
           shift != 0 &&
           ((value >> (64 - shift)) & 1);
+        bool overflow =
+          shift != 0 &&
+          ((value >> 63) != (result >> 63));
 
         registers[insn.a] = result;
 
         set_arithmetic_flags(
           &registers[flags_idx],
           carry,
-          false
+          overflow
         );
         ip_written = (insn.a == ip_idx);
         break;
@@ -1278,13 +1274,14 @@ int main(int argc, char** argv) {
         bool carry =
           shift != 0 &&
           ((value >> (shift - 1)) & 1);
+        bool overflow = false;
 
         registers[insn.a] = result;
 
         set_arithmetic_flags(
           &registers[flags_idx],
           carry,
-          false
+          overflow
         );
         ip_written = (insn.a == ip_idx);
         break;
@@ -1303,26 +1300,15 @@ int main(int argc, char** argv) {
         bool carry =
           shift != 0 &&
           ((value >> (shift - 1)) & 1u);
+        bool overflow = false;
 
         registers[insn.a] = result;
 
-        const u64 flag_mask =
-          FLAG_ZERO |
-          FLAG_CARRY |
-          FLAG_OVERFLOW;
-
-        u64 new_flags = registers[flags_idx] & ~flag_mask;
-
-        if (result == 0) {
-          new_flags |= FLAG_ZERO;
-        }
-
-        if (carry) {
-          new_flags |= FLAG_CARRY;
-        }
-
-        registers[flags_idx] = new_flags;
-
+        set_arithmetic_flags(
+          &registers[flags_idx],
+          carry,
+          overflow
+        );
         ip_written = (insn.a == ip_idx);
         break;
       }
