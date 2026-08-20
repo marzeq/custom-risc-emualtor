@@ -4,6 +4,10 @@
 !emulator.c
 !assembler.c
 !isa.h
+!mmio_plugin.h
+!plugins/
+plugins/*
+!plugins/stdio.c
 !runtime.asm
 !example.asm
 !ISA.md

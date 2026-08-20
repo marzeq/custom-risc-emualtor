@@ -1,26 +1,13 @@
 #include <assert.h>
+#include <dlfcn.h>
 #include <stdlib.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
-#include <termios.h>
-#include <unistd.h>
-
-static struct termios old_termios;
-
-static void terminal_raw_enable(void) {
-  struct termios t;
-
-  tcgetattr(STDIN_FILENO, &old_termios);
-  t = old_termios;
-
-  t.c_lflag &= ~(ICANON | ECHO);
-
-  tcsetattr(STDIN_FILENO, TCSANOW, &t);
-}
 
 #include "isa.h"
+#include "mmio_plugin.h"
 
 #define KiB(x) ((x) * 1024)
 #define MiB(x) ((x) * 1024 * 1024)
@@ -73,9 +60,13 @@ typedef struct {
   u8 name[16];
 } device_info;
 
-typedef enum {
-  DEVICE_STDIO = 1,
-} device_type;
+typedef struct {
+  void* library;
+  const mmio_plugin_descriptor* plugin;
+  device_info info;
+} loaded_device;
+
+static loaded_device* mmio_devices;
 
 static u64 read_u64_le(const u8* bytes) {
   return (u64)bytes[0]
@@ -162,11 +153,11 @@ static memory_region get_memory_region_type(
   }
 }
 
-static const device_info* find_device(const device_info* devices, u64 device_count, u64 address) {
+static loaded_device* find_device(loaded_device* devices, u64 device_count, u64 address) {
   for (u64 i = 0; i < device_count; i++) {
-    const device_info* d = &devices[i];
+    loaded_device* d = &devices[i];
 
-    if (address >= d->start && address < d->start + d->size) {
+    if (address >= d->info.start && address < d->info.start + d->info.size) {
       return d;
     }
   }
@@ -180,33 +171,14 @@ static bool mmio_read(
   u64 address,
   u64* out_value
 ) {
-  const device_info* device = find_device(devices, device_count, address);
-
-  usz offset = address - device->start;
+  (void)devices;
+  loaded_device* device = find_device(mmio_devices, device_count, address);
 
   if (!device) {
     return false;
   }
 
-  switch (device->type) {
-    case DEVICE_STDIO: {
-      if (offset == 0) {
-        int ch = getchar();
-
-        if (ch == EOF) {
-          *out_value = (u64)0;
-        } else {
-          *out_value = (u64)(unsigned char)ch;
-        }
-      } else {
-        return false;
-      }
-
-      return true;
-    }
-
-    default: return false;
-  }
+  return device->plugin->read(address - device->info.start, out_value);
 }
 
 static bool mmio_write(
@@ -215,49 +187,14 @@ static bool mmio_write(
   u64 address,
   u64 value
 ) {
-  const device_info* device = find_device(devices, device_count, address);
-
-  usz offset = address - device->start;
+  (void)devices;
+  loaded_device* device = find_device(mmio_devices, device_count, address);
 
   if (!device) {
     return false;
   }
 
-  switch (device->type) {
-    case DEVICE_STDIO: {
-      if (offset == 0) {
-        int ch = (int)(value & 0xFFu);
-
-        if (putchar(ch) == EOF) {
-          return false;
-        }
-      } else if (offset == 8) {
-        if (value != 0) {
-          // backspace-like behaviour: move cursor back and erase character
-          if (putchar('\b') == EOF) {
-            return false;
-          }
-          if (putchar(' ') == EOF) {
-            return false;
-          }
-          if (putchar('\b') == EOF) {
-            return false;
-          }
-        } else {
-          // if value is 0, just move cursor back without erasing
-          if (putchar('\b') == EOF) {
-            return false;
-          }
-        }
-      } else {
-        return false;
-      }
-
-      return true;
-    }
-
-    default: return false;
-  }
+  return device->plugin->write(address - device->info.start, value);
 }
 
 #define DEFINE_MEMORY_READ(bits, type, read_fn)               \
@@ -430,12 +367,75 @@ static bool jump_condition_is_met(u64 flags, opcode op) {
   return false;
 }
 
-#define USAGE(prog) "Usage: %s binary [mem_mib]\n", (prog)
+#define USAGE(prog) "Usage: %s [--device plugin.so]... binary [mem_mib]\n", (prog)
 
 static void print_help(const char* program) {
   printf(USAGE(program));
+  printf("  -d, --device: load an MMIO plugin (repeatable)\n");
   printf("  binary: path to the program image to load into ROM\n");
   printf("  mem_mib: total memory size in MiB (default: 512)\n");
+}
+
+static bool load_mmio_device(
+  const char* path,
+  u64 start,
+  u64 available_size,
+  loaded_device* out_device
+) {
+  void* library = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+  if (!library) {
+    fprintf(stderr, "Error: Could not load MMIO plugin '%s': %s\n", path, dlerror());
+    return false;
+  }
+
+  dlerror();
+  void* symbol = dlsym(library, MMIO_PLUGIN_ENTRYPOINT);
+  const char* symbol_error = dlerror();
+  if (symbol_error) {
+    fprintf(stderr, "Error: MMIO plugin '%s' has no %s entrypoint: %s\n",
+      path, MMIO_PLUGIN_ENTRYPOINT, symbol_error);
+    dlclose(library);
+    return false;
+  }
+
+  mmio_plugin_entrypoint_fn entrypoint;
+  static_assert(sizeof(entrypoint) == sizeof(symbol));
+  memcpy(&entrypoint, &symbol, sizeof(entrypoint));
+  const mmio_plugin_descriptor* plugin = entrypoint(MMIO_PLUGIN_ABI_VERSION);
+  if (!plugin) {
+    fprintf(stderr, "Error: MMIO plugin '%s' does not support ABI version %u\n",
+      path, MMIO_PLUGIN_ABI_VERSION);
+    dlclose(library);
+    return false;
+  }
+
+  if (!plugin->name || plugin->name[0] == '\0' || plugin->size == 0 ||
+      !plugin->read || !plugin->write) {
+    fprintf(stderr, "Error: MMIO plugin '%s' returned an invalid descriptor\n", path);
+    dlclose(library);
+    return false;
+  }
+  if (plugin->size > available_size) {
+    fprintf(stderr,
+      "Error: MMIO plugin '%s' needs %llu bytes, but only %llu MMIO bytes remain\n",
+      path,
+      (unsigned long long)plugin->size,
+      (unsigned long long)available_size);
+    dlclose(library);
+    return false;
+  }
+
+  *out_device = (loaded_device){
+    .library = library,
+    .plugin = plugin,
+    .info = {
+      .type = plugin->type,
+      .start = start,
+      .size = plugin->size,
+    },
+  };
+  snprintf((char*)out_device->info.name, sizeof(out_device->info.name), "%s", plugin->name);
+  return true;
 }
 
 static void dump_register(const u64* registers, size_t index) {
@@ -499,23 +499,53 @@ int main(int argc, char** argv) {
   usz ram_size = MiB(512);
   const usz mmio_size = MiB(32);
   const char* binary_path = NULL;
+  const char* mem_mib_arg = NULL;
+  const char** plugin_paths = NULL;
+  usz plugin_count = 0;
+  device_info* devices = NULL;
+  u8* ram = NULL;
+  u8* firmware_rom = NULL;
+  u64* registers = NULL;
+  FILE* binary_file = NULL;
+  int exit_code = 1;
 
+  plugin_paths = calloc((usz)argc, sizeof(*plugin_paths));
+  if (!plugin_paths) {
+    fprintf(stderr, "Error: Could not allocate plugin path list\n");
+    goto done;
+  }
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
       print_help(argv[0]);
-      return 0;
+      exit_code = 0;
+      goto done;
+    } else if (strcmp(argv[i], "--device") == 0 || strcmp(argv[i], "-d") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "Error: %s requires a plugin path\n", argv[i - 1]);
+        goto done;
+      }
+      plugin_paths[plugin_count++] = argv[i];
+    } else if (argv[i][0] == '-') {
+      fprintf(stderr, "Error: Unknown option '%s'\n", argv[i]);
+      goto done;
+    } else if (!binary_path) {
+      binary_path = argv[i];
+    } else if (!mem_mib_arg) {
+      mem_mib_arg = argv[i];
+    } else {
+      fprintf(stderr, "Error: Unexpected argument '%s'\n", argv[i]);
+      goto done;
     }
   }
 
-  if (argc < 2) {
+  if (!binary_path) {
     fprintf(stderr, "Error: No binary specified\n");
     fprintf(stderr, USAGE(argv[0]));
-    return 1;
+    goto done;
   }
 
-  binary_path = argv[1];
-  if (argc > 2) {
-    ram_size = MiB(strtoull(argv[2], NULL, 10));
+  if (mem_mib_arg) {
+    ram_size = MiB(strtoull(mem_mib_arg, NULL, 10));
   }
   const usz register_count = GENERAL_REGISTER_COUNT + RESERVED_REGISTER_COUNT;
 
@@ -531,23 +561,44 @@ int main(int argc, char** argv) {
   };
 
   const usz mmio_start = machine_info.ram_start + machine_info.ram_size;
+  if (plugin_count > device_info_rom_size / sizeof(*devices)) {
+    fprintf(stderr, "Error: Too many MMIO plugins for the device info ROM\n");
+    goto done;
+  }
+  devices = calloc(1, device_info_rom_size);
+  if (!devices) {
+    fprintf(stderr, "Error: Could not allocate device info ROM\n");
+    goto done;
+  }
+  if (plugin_count != 0) {
+    mmio_devices = calloc(plugin_count, sizeof(*mmio_devices));
+    if (!mmio_devices) {
+      fprintf(stderr, "Error: Could not allocate MMIO device list\n");
+      goto done;
+    }
+  }
 
-  device_info devices[] = {
-    {
-      .type = DEVICE_STDIO,
-      .start = mmio_start,
-      .size = 16,
-      .name = "stdio device",
-    },
-  };
+  u64 next_mmio_address = mmio_start;
+  const u64 mmio_end = mmio_start + mmio_size;
+  for (usz i = 0; i < plugin_count; i++) {
+    if (!load_mmio_device(
+      plugin_paths[i],
+      next_mmio_address,
+      mmio_end - next_mmio_address,
+      &mmio_devices[i]
+    )) {
+      goto done;
+    }
+    devices[i] = mmio_devices[i].info;
 
-  machine_info.device_count = sizeof(devices) / sizeof(devices[0]);
-
-  u8* ram = NULL;
-  u8* firmware_rom = NULL;
-  u64* registers = NULL;
-  FILE* binary_file = NULL;
-  int exit_code = 1;
+    u64 device_end = next_mmio_address + devices[i].size;
+    next_mmio_address = (device_end + 7u) & ~7ull;
+    if (next_mmio_address < device_end) {
+      fprintf(stderr, "Error: MMIO address overflow while loading '%s'\n", plugin_paths[i]);
+      goto done;
+    }
+  }
+  machine_info.device_count = plugin_count;
 
   firmware_rom = malloc(firmware_rom_size);
   if (!firmware_rom) {
@@ -622,8 +673,6 @@ int main(int argc, char** argv) {
   }
   fclose(binary_file);
   binary_file = NULL;
-
-  terminal_raw_enable();
 
   while (true) {
     u64 ip = registers[ip_idx];
@@ -739,7 +788,7 @@ int main(int argc, char** argv) {
         u64 lhs = registers[insn.b];
         u64 rhs = registers[insn.c];
 
-        __uint128_t wide = (__uint128_t)lhs * (__uint128_t)rhs;
+        u128 wide = (u128)lhs * (u128)rhs;
 
         u64 result = (u64)wide;
 
@@ -764,7 +813,7 @@ int main(int argc, char** argv) {
         u64 lhs = registers[insn.b];
         u64 rhs = registers[insn.c];
 
-        __uint128_t wide = (__uint128_t)lhs * (__uint128_t)rhs;
+        u128 wide = (u128)lhs * (u128)rhs;
 
         u64 result = (u64)(wide >> 64);
 
@@ -787,7 +836,7 @@ int main(int argc, char** argv) {
         i64 lhs = (i64)registers[insn.b];
         i64 rhs = (i64)registers[insn.c];
 
-        __int128_t wide = (__int128_t)lhs * (__int128_t)rhs;
+        i128 wide = (i128)lhs * (i128)rhs;
 
         i64 result = (i64)(wide >> 64);
 
@@ -944,7 +993,7 @@ int main(int argc, char** argv) {
         u64 lhs = registers[insn.b];
         u64 rhs = insn.imm;
 
-        __uint128_t wide = (__uint128_t)lhs * (__uint128_t)rhs;
+        u128 wide = (u128)lhs * (u128)rhs;
 
         u64 result = (u64)wide;
 
@@ -969,7 +1018,7 @@ int main(int argc, char** argv) {
         u64 lhs = registers[insn.b];
         u64 rhs = insn.imm;
 
-        __uint128_t wide = (__uint128_t)lhs * (__uint128_t)rhs;
+        u128 wide = (u128)lhs * (u128)rhs;
 
         u64 result = (u64)(wide >> 64);
 
@@ -992,7 +1041,7 @@ int main(int argc, char** argv) {
         i64 lhs = (i64)registers[insn.b];
         i64 rhs = (i64)insn.imm;
 
-        __int128_t wide = (__int128_t)lhs * (__int128_t)rhs;
+        i128 wide = (i128)lhs * (i128)rhs;
 
         i64 result = (i64)(wide >> 64);
 
@@ -1999,7 +2048,9 @@ int main(int argc, char** argv) {
 
 done:
 #ifdef DEBUG
-  dump_registers(registers);
+  if (registers) {
+    dump_registers(registers);
+  }
 #endif
   if (binary_file) {
     fclose(binary_file);
@@ -2013,5 +2064,16 @@ done:
   if (registers) {
     free(registers);
   }
+  if (mmio_devices) {
+    for (usz i = plugin_count; i > 0; i--) {
+      if (mmio_devices[i - 1].library) {
+        dlclose(mmio_devices[i - 1].library);
+      }
+    }
+    free(mmio_devices);
+    mmio_devices = NULL;
+  }
+  free(devices);
+  free(plugin_paths);
   return exit_code;
 }

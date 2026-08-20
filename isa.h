@@ -11,6 +11,8 @@ typedef uint32_t u32;
 typedef int32_t i32;
 typedef uint16_t u16;
 typedef uint8_t u8;
+typedef __int128_t i128;
+typedef __uint128_t u128;
 typedef size_t usz;
 
 typedef struct [[gnu::packed]] {
