@@ -23,6 +23,31 @@ when starting the emulator:
 No MMIO devices are installed when no `--device` arguments are supplied.
 Plugins are trusted native code and have the same permissions as the emulator.
 
+### Persistent virtual disk
+
+Load `plugins/simple_vdisk.so` to attach the `vdisk` file in the emulator's
+current working directory:
+
+```sh
+./emulator --device ./plugins/simple_vdisk.so program.bin
+```
+
+The plugin creates a 16 MiB `vdisk` when the file does not exist or is empty.
+An existing non-empty file keeps its current size and contents. The file is not
+removed by `make clean`.
+
+Guest software discovers it as `MMIO_DEVICE_SIMPLE_VDISK`. Its MMIO registers
+are:
+
+| Offset | Access | Meaning |
+| ---: | :---: | --- |
+| `0` | read/write | Current byte position. A write seeks within the disk. |
+| `8` | read/write | Read or write one little-endian 64-bit word, then advance the position by 8. |
+| `16` | read | Disk capacity in bytes. |
+
+Position and data operations outside the disk capacity fail as invalid MMIO
+accesses. Successful data writes are flushed to `vdisk` before returning.
+
 The emulator assigns MMIO ranges in plugin argument order, aligned to 8 bytes.
 A plugin never chooses or learns its absolute guest address. Guest firmware
 finds the resulting type, base, size, and short name through the existing
@@ -32,35 +57,30 @@ device implementation and lets the same plugin work with any RAM layout.
 ## Writing an MMIO plugin
 
 Include [`mmio_plugin.h`](./mmio_plugin.h), implement offset-based read and
-write callbacks, and export `mmio_plugin_get_descriptor`:
+write callbacks, and use `MMIO_PLUGIN_DEFINE` to generate the descriptor and
+version-checked exported entrypoint:
 
 ```c
 #include "mmio_plugin.h"
 
-static bool counter_read(uint64_t offset, uint64_t* value) {
-  if (offset != 0) return false;
-  *value = 42;
+MMIO_PLUGIN_READ(counter_read, register_offset, result) {
+  if (register_offset != 0) return false;
+  *result = 42;
   return true;
 }
 
-static bool counter_write(uint64_t offset, uint64_t value) {
-  (void)value;
-  return offset == 0;
+MMIO_PLUGIN_WRITE(counter_write, register_offset, new_value) {
+  (void)new_value;
+  return register_offset == 0;
 }
 
-static const mmio_plugin_descriptor counter = {
-  .type = 0x100,
+MMIO_PLUGIN_DEFINE({
+  .type = 0x100, // private/experimental type
   .size = 8,
   .read = counter_read,
   .write = counter_write,
   .name = "counter",
-};
-
-const mmio_plugin_descriptor* mmio_plugin_get_descriptor(
-  uint64_t abi_version
-) {
-  return abi_version == MMIO_PLUGIN_ABI_VERSION ? &counter : NULL;
-}
+})
 ```
 
 Build it as a position-independent shared library:
@@ -71,7 +91,8 @@ clang -std=c23 -fPIC -shared -I. -o counter.so counter.c
 
 The descriptor supplies only:
 
-- `type`: the numeric identifier guest software uses to recognize the device;
+- `type`: the identifier guest software uses to recognize the device; standard
+  identifiers come from the stable `mmio_device_type` enum;
 - `size`: the number of bytes in its MMIO window;
 - `read` and `write`: callbacks receiving a device-relative byte offset;
 - `name`: a human-readable name (the guest device record stores its first 15
@@ -89,6 +110,8 @@ constructor/destructor functions may initialize and clean it up. The bundled
 setup and restoration.
 
 The entrypoint receives an ABI version so incompatible plugins fail during
-startup with a useful error. Device types are intentionally plugin-defined;
-authors of independently distributed devices should coordinate identifiers to
-avoid guest-visible type collisions.
+startup with a useful error. Standard device identifiers live in the
+append-only `mmio_device_type` enum in `mmio_plugin.h`. The emulator treats
+these values as opaque, but the stable registry lets plugins and guest software
+agree on device semantics. Experimental or private plugins may use unregistered
+values, taking care to avoid guest-visible type collisions.

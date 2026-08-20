@@ -1,7 +1,7 @@
 cc := clang
 cflags := -Wall -Wextra -Werror -std=c23 -Wswitch-enum
 
-all: emulator asm plugins/stdio.so
+all: emulator asm plugins/stdio.so plugins/simple_vdisk.so
 
 emulator: emulator.c isa.h mmio_plugin.h
 	$(cc) $(cflags) -o emulator emulator.c -ldl
@@ -15,9 +15,12 @@ asm: assembler.c isa.h
 plugins/stdio.so: plugins/stdio.c mmio_plugin.h
 	$(cc) $(cflags) -fPIC -shared -o plugins/stdio.so plugins/stdio.c
 
+plugins/simple_vdisk.so: plugins/simple_vdisk.c mmio_plugin.h
+	$(cc) $(cflags) -fPIC -shared -o plugins/simple_vdisk.so plugins/simple_vdisk.c
+
 .PHONY: clean
 clean:
-	rm -f emulator debug-emulator asm plugins/stdio.so
+	rm -f emulator debug-emulator asm plugins/stdio.so plugins/simple_vdisk.so
 
 .PHONY: dump-example
 dump-example: asm

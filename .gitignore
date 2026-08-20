@@ -8,6 +8,7 @@
 !plugins/
 plugins/*
 !plugins/stdio.c
+!plugins/simple_vdisk.c
 !runtime.asm
 !example.asm
 !ISA.md

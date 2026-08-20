@@ -27,7 +27,7 @@ static void stdio_stop(void) {
   }
 }
 
-static bool stdio_read(uint64_t offset, uint64_t* value) {
+MMIO_PLUGIN_READ(stdio_read, offset, value) {
   if (offset != 0) {
     return false;
   }
@@ -37,7 +37,7 @@ static bool stdio_read(uint64_t offset, uint64_t* value) {
   return true;
 }
 
-static bool stdio_write(uint64_t offset, uint64_t value) {
+MMIO_PLUGIN_WRITE(stdio_write, offset, value) {
   if (offset == 0) {
     return putchar((int)(value & 0xffu)) != EOF;
   }
@@ -55,16 +55,10 @@ static bool stdio_write(uint64_t offset, uint64_t value) {
   return true;
 }
 
-static const mmio_plugin_descriptor descriptor = {
-  .type = 1,
+MMIO_PLUGIN_DEFINE({
+  .type = MMIO_DEVICE_STDIO,
   .size = 16,
   .read = stdio_read,
   .write = stdio_write,
   .name = "stdio device",
-};
-
-const mmio_plugin_descriptor* mmio_plugin_get_descriptor(
-  uint64_t abi_version
-) {
-  return abi_version == MMIO_PLUGIN_ABI_VERSION ? &descriptor : NULL;
-}
+})
