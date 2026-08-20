@@ -27,5 +27,5 @@ dump-example: asm
 	./asm example.asm /tmp/example.bin && xxd -g1 /tmp/example.bin && rm -f /tmp/example.bin
 
 .PHONY: run-example
-run-example: emulator asm plugins/stdio.so
-	./asm example.asm /tmp/example.bin && ./emulator --device ./plugins/stdio.so /tmp/example.bin && rm -f /tmp/example.bin
+run-example: emulator asm plugins/stdio.so plugins/simple_vdisk.so
+	./asm example.asm /tmp/example.bin && ./emulator --device ./plugins/stdio.so --device ./plugins/simple_vdisk.so /tmp/example.bin && rm -f /tmp/example.bin

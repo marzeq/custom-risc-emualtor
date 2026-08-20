@@ -48,6 +48,20 @@ are:
 Position and data operations outside the disk capacity fail as invalid MMIO
 accesses. Successful data writes are flushed to `vdisk` before returning.
 
+`runtime.asm` discovers the first simple-vdisk device without reserving a
+register and provides these helpers:
+
+- `vdisk_size()` returns the capacity, or zero when no disk is attached;
+- `vdisk_seek(r1 = position)` returns one on success and zero when the device
+  is absent or the position is outside the disk;
+- `vdisk_read()` returns the next 64-bit word and advances the position;
+- `vdisk_write(r1 = value)` writes the next word, advances the position, and
+  returns one, or returns zero when no disk is attached.
+
+The example stores its 32-byte name buffer at disk offset zero. On later runs
+it prints the previous non-empty name before asking for a new one. This remains
+optional: the example behaves as before when only the stdio plugin is loaded.
+
 The emulator assigns MMIO ranges in plugin argument order, aligned to 8 bytes.
 A plugin never chooses or learns its absolute guest address. Guest firmware
 finds the resulting type, base, size, and short name through the existing

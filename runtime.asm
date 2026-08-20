@@ -1,3 +1,9 @@
+#define RUNTIME_STATE_SIZE 128
+#define RUNTIME_STDIO_BASE 0
+#define RUNTIME_VDISK_BASE 8
+#define MMIO_DEVICE_STDIO 1
+#define MMIO_DEVICE_SIMPLE_VDISK 2
+
 .entry _setup
 
 _setup:
@@ -17,8 +23,14 @@ _setup:
   // r2 = ram_size
   load r2, machine_info, 24
 
-  // IVT starts after 2 MMIO addresses
-  addi r3, r1, 16
+  // Runtime-owned state starts at ram_start. Keep device addresses there so
+  // adding devices does not permanently consume general-purpose registers.
+  loadi r0, 0
+  store r0, r1, RUNTIME_STDIO_BASE
+  store r0, r1, RUNTIME_VDISK_BASE
+
+  // IVT starts after the runtime state block.
+  addi r3, r1, RUNTIME_STATE_SIZE
   mov ivt, r3
 
   // Fill all 256 vectors with panic
@@ -39,9 +51,6 @@ _setup:
   // reserve some initial stack space
   subi sp, sp, 64
 
-  // r15 = stdio MMIO base (0 = not found)
-  loadi r15, 0
-
   load r0, machine_info, 48 // device count
   load r1, machine_info, 56 // device header size
   load r2, machine_info, 64 // device list address
@@ -51,8 +60,6 @@ _setup:
   jmp .find_device
 
 .call_main:
-  cmpi r15, 0
-  je panic
   call main
   halt
 
@@ -61,17 +68,33 @@ _setup:
   jge .call_main
 
   load r5, r2, 0           // device type
-  cmpi r5, 1               // 1 = stdio
+  cmpi r5, MMIO_DEVICE_STDIO
   je .stdio_device
+  cmpi r5, MMIO_DEVICE_SIMPLE_VDISK
+  je .vdisk_device
 
   jmp .next_device
 
 .stdio_device:
   // first stdio device wins
-  cmpi r15, 0
+  load r6, machine_info, 16
+  load r7, r6, RUNTIME_STDIO_BASE
+  cmpi r7, 0
   jne .next_device
 
-  load r15, r2, 8          // MMIO base address
+  load r7, r2, 8           // MMIO base address
+  store r7, r6, RUNTIME_STDIO_BASE
+  jmp .next_device
+
+.vdisk_device:
+  // first simple vdisk device wins
+  load r6, machine_info, 16
+  load r7, r6, RUNTIME_VDISK_BASE
+  cmpi r7, 0
+  jne .next_device
+
+  load r7, r2, 8           // MMIO base address
+  store r7, r6, RUNTIME_VDISK_BASE
   jmp .next_device
 
 .next_device:
@@ -80,18 +103,22 @@ _setup:
 
 
 getch: // (void) -> r0 = char or 0 if no input
-  cmpi r15, 0
+  load r0, machine_info, 16
+  load r0, r0, RUNTIME_STDIO_BASE
+  cmpi r0, 0
   je panic
 
-  load r0, r15, 0
+  load r0, r0, 0
   ret
 
 
 putch: // (r1 = char) -> void
-  cmpi r15, 0
+  load r0, machine_info, 16
+  load r0, r0, RUNTIME_STDIO_BASE
+  cmpi r0, 0
   je panic
 
-  store r1, r15, 0
+  store r1, r0, 0
   ret
 
 
@@ -113,11 +140,13 @@ puts: // (r1 = str) -> void
 
 
 backspace: // (void) -> void
-  cmpi r15, 0
+  load r0, machine_info, 16
+  load r0, r0, RUNTIME_STDIO_BASE
+  cmpi r0, 0
   je panic
 
   loadi r1, 1
-  store r1, r15, 8
+  store r1, r0, 8
   ret
 
 
@@ -214,6 +243,64 @@ getline: // (r1 = buffer, r2 = sizeof buffer) -> void
   pop r7
   pop r6
   pop r5
+  ret
+
+
+vdisk_size: // (void) -> r0 = capacity in bytes, or 0 if unavailable
+  load r0, machine_info, 16
+  load r0, r0, RUNTIME_VDISK_BASE
+  cmpi r0, 0
+  je .unavailable
+
+  load r0, r0, 16
+
+.unavailable:
+  ret
+
+
+vdisk_seek: // (r1 = byte position) -> r0 = 1 on success, 0 if unavailable/out of range
+  load r0, machine_info, 16
+  load r0, r0, RUNTIME_VDISK_BASE
+  cmpi r0, 0
+  je .failed
+
+  load r2, r0, 16
+  cmp r1, r2
+  jg .failed
+
+  store r1, r0, 0
+  loadi r0, 1
+  ret
+
+.failed:
+  loadi r0, 0
+  ret
+
+
+vdisk_read: // (void) -> r0 = next little-endian 64-bit word, or 0 if unavailable
+  load r0, machine_info, 16
+  load r0, r0, RUNTIME_VDISK_BASE
+  cmpi r0, 0
+  je .unavailable
+
+  load r0, r0, 8
+
+.unavailable:
+  ret
+
+
+vdisk_write: // (r1 = value) -> r0 = 1 on success, 0 if unavailable
+  load r0, machine_info, 16
+  load r0, r0, RUNTIME_VDISK_BASE
+  cmpi r0, 0
+  je .unavailable
+
+  store r1, r0, 8
+  loadi r0, 1
+  ret
+
+.unavailable:
+  loadi r0, 0
   ret
 
 
